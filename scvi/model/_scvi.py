@@ -334,7 +334,8 @@ class SCVI(
             print(pca_matrix.shape)
             pca_matrix[:,labels!=1] = 0
             matrix_list.append(pca_matrix)
-        self.M = torch.tensor(np.concatenate(matrix_list,axis=0))
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.M = torch.tensor(np.concatenate(matrix_list,axis=0)).to(device)
 
 
 

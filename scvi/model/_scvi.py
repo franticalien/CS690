@@ -1,9 +1,9 @@
 import logging
-from typing import List, Literal, Optional
+from typing import Literal, Optional
 
 import numpy as np
 from anndata import AnnData
-import scanpy as sc
+
 from scvi import REGISTRY_KEYS
 from scvi._types import MinifiedDataType
 from scvi.data import AnnDataManager
@@ -24,8 +24,7 @@ from scvi.model.base import UnsupervisedTrainingMixin
 from scvi.model.utils import get_minified_adata_scrna
 from scvi.module import VAE
 from scvi.utils import setup_anndata_dsp
-from sklearn.decomposition import PCA
-from k_means_constrained import KMeansConstrained
+
 from .base import ArchesMixin, BaseMinifiedModeModelClass, RNASeqMixin, VAEMixin
 
 _SCVI_LATENT_QZM = "_scvi_latent_qzm"
@@ -102,11 +101,7 @@ class SCVI(
         self,
         adata: AnnData,
         n_hidden: int = 128,
-        n_hvg: int = 5000,
-        n_clusters: int = 10,
-        n_pcs: int = 50,
-        n_z1: int = 10,
-        n_z2: int = 20,
+        n_latent: int = 10,
         n_layers: int = 1,
         dropout_rate: float = 0.1,
         dispersion: Literal["gene", "gene-batch", "gene-label", "gene-cell"] = "gene",
@@ -132,21 +127,15 @@ class SCVI(
             library_log_means, library_log_vars = _init_library_size(
                 self.adata_manager, n_batch
             )
-        sc.pp.highly_variable_genes(adata, n_top_genes=n_hvg, flavor="cell_ranger", batch_key="batch",subset = False)
-        self.highly_variable = adata.var["highly_variable"]
-        self.M = None # n_pcs*n_clusters X n_genes
-        self.hkmkb(adata,n_clusters,n_pcs)
+
         self.module = self._module_cls(
             n_input=self.summary_stats.n_vars,
-            M = self.M,
-            highly_variable = self.highly_variable,
             n_batch=n_batch,
             n_labels=self.summary_stats.n_labels,
             n_continuous_cov=self.summary_stats.get("n_extra_continuous_covs", 0),
             n_cats_per_cov=n_cats_per_cov,
             n_hidden=n_hidden,
-            n_z1 = n_z1,
-            n_z2 = n_z2,
+            n_latent=n_latent,
             n_layers=n_layers,
             dropout_rate=dropout_rate,
             dispersion=dispersion,
@@ -159,12 +148,11 @@ class SCVI(
         )
         self.module.minified_data_type = self.minified_data_type
         self._model_summary_string = (
-            "SCVI Model with the following params: \nn_hidden: {}, n_z1: {},n_z2: {}, n_layers: {}, dropout_rate: "
+            "SCVI Model with the following params: \nn_hidden: {}, n_latent: {}, n_layers: {}, dropout_rate: "
             "{}, dispersion: {}, gene_likelihood: {}, latent_distribution: {}"
         ).format(
             n_hidden,
-            n_z1,
-            n_z2,
+            n_latent,
             n_layers,
             dropout_rate,
             dispersion,
@@ -182,11 +170,10 @@ class SCVI(
         batch_key: Optional[str] = None,
         labels_key: Optional[str] = None,
         size_factor_key: Optional[str] = None,
-        categorical_covariate_keys: Optional[List[str]] = None,
-        continuous_covariate_keys: Optional[List[str]] = None,
+        categorical_covariate_keys: Optional[list[str]] = None,
+        continuous_covariate_keys: Optional[list[str]] = None,
         **kwargs,
     ):
-
         """%(summary)s.
 
         Parameters
@@ -227,14 +214,14 @@ class SCVI(
     @staticmethod
     def _get_fields_for_adata_minification(
         minified_data_type: MinifiedDataType,
-    ) -> List[BaseAnnDataField]:
+    ) -> list[BaseAnnDataField]:
         """Return the anndata fields required for adata minification of the given minified_data_type."""
         if minified_data_type == ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
             fields = [
-                #ObsmField(
-                #    REGISTRY_KEYS.LATENT_QZM_KEY,
-                 #   _SCVI_LATENT_QZM,
-                #),'''
+                ObsmField(
+                    REGISTRY_KEYS.LATENT_QZM_KEY,
+                    _SCVI_LATENT_QZM,
+                ),
                 ObsmField(
                     REGISTRY_KEYS.LATENT_QZV_KEY,
                     _SCVI_LATENT_QZV,
@@ -296,7 +283,7 @@ class SCVI(
             )
 
         minified_adata = get_minified_adata_scrna(self.adata, minified_data_type)
-        #minified_adata.obsm[_SCVI_LATENT_QZM] = self.adata.obsm[use_latent_qzm_key]
+        minified_adata.obsm[_SCVI_LATENT_QZM] = self.adata.obsm[use_latent_qzm_key]
         minified_adata.obsm[_SCVI_LATENT_QZV] = self.adata.obsm[use_latent_qzv_key]
         counts = self.adata_manager.get_from_registry(REGISTRY_KEYS.X_KEY)
         minified_adata.obs[_SCVI_OBSERVED_LIB_SIZE] = np.squeeze(
@@ -306,35 +293,3 @@ class SCVI(
             minified_adata, minified_data_type
         )
         self.module.minified_data_type = minified_data_type
-    def hkmkb(
-        self,
-        adata: AnnData,
-        n_clusters: int,
-        n_pcs: int,
-    ):
-        matrix_list = []
-        num_genes = np.sum(self.highly_variable)
-        matrix = np.asarray(adata.X.todense())[:,self.highly_variable]
-        print("Starting Clustering")
-        clf = KMeansConstrained(n_clusters=n_clusters,
-            size_min=num_genes/n_clusters,
-            random_state=0)
-        clf.fit_predict(matrix.T)
-        print("Clustering Done")
-        print(matrix.shape)
-        labels = clf.labels_
-        for i in range(n_clusters):
-            matrix_copy = matrix.copy()
-
-            matrix_copy[:,labels!=i] = 0
-            pca = PCA(n_components=n_pcs)
-            pca.fit(matrix_copy)
-            pca_matrix = pca.components_
-            print(pca_matrix.shape)
-            pca_matrix[:,labels!=1] = 0
-            matrix_list.append(pca_matrix)
-        self.M = np.concatenate(matrix_list,axis=0)
-
-
-
-

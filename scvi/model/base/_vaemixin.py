@@ -1,5 +1,6 @@
 import logging
-from typing import Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Optional, Union
 
 import numpy as np
 import torch
@@ -145,7 +146,7 @@ class VAEMixin:
         mc_samples: int = 5000,
         batch_size: Optional[int] = None,
         return_dist: bool = False,
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+    ) -> Union[np.ndarray, tuple[np.ndarray, np.ndarray]]:
         """Return the latent representation for each cell.
 
         This is typically denoted as :math:`z_n`.
@@ -181,17 +182,13 @@ class VAEMixin:
             adata=adata, indices=indices, batch_size=batch_size
         )
         latent = []
-        latent_z1 = []
-        latent_z2 = []
-       # latent_qz1v = []
-       # latent_qz2v = []
+        latent_qzm = []
+        latent_qzv = []
         for tensors in scdl:
             inference_inputs = self.module._get_inference_input(tensors)
             outputs = self.module.inference(**inference_inputs)
-            '''if "qz1" in outputs:
-                qz1 = outputs["qz1"]
-                #qz1 = outputs["qz1"]
-
+            if "qz" in outputs:
+                qz = outputs["qz"]
             else:
                 qz_m, qz_v = outputs["qz_m"], outputs["qz_v"]
                 qz = torch.distributions.Normal(qz_m, qz_v.sqrt())
@@ -204,17 +201,13 @@ class VAEMixin:
                 else:
                     z = qz.loc
             else:
-                z = outputs["z"]'''
-            z = outputs["z"]
-            z1 = outputs['z1']
-            z2 = outputs['z2']
+                z = outputs["z"]
+
             latent += [z.cpu()]
-            latent_z1 += [z1.cpu()]
-            latent_z2 += [z2.cpu()]
-            #latent_qzm += [qz.loc.cpu()]
-            #latent_qzv += [qz.scale.square().cpu()]
+            latent_qzm += [qz.loc.cpu()]
+            latent_qzv += [qz.scale.square().cpu()]
         return (
             (torch.cat(latent_qzm).numpy(), torch.cat(latent_qzv).numpy())
             if return_dist
-            else {'z':torch.cat(latent).numpy(),'z1':torch.cat(latent_z1).numpy(),'z2':torch.cat(latent_z2).numpy()}
+            else torch.cat(latent).numpy()
         )

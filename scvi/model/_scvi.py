@@ -1,5 +1,5 @@
 import logging
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 import numpy as np
 from anndata import AnnData
@@ -101,7 +101,8 @@ class SCVI(
         self,
         adata: AnnData,
         n_hidden: int = 128,
-        n_latent: int = 10,
+        n_z1: int = 10,
+        n_z2: int = 20,
         n_layers: int = 1,
         dropout_rate: float = 0.1,
         dispersion: Literal["gene", "gene-batch", "gene-label", "gene-cell"] = "gene",
@@ -135,7 +136,8 @@ class SCVI(
             n_continuous_cov=self.summary_stats.get("n_extra_continuous_covs", 0),
             n_cats_per_cov=n_cats_per_cov,
             n_hidden=n_hidden,
-            n_latent=n_latent,
+            n_z1 = n_z1,
+            n_z2 = n_z2,
             n_layers=n_layers,
             dropout_rate=dropout_rate,
             dispersion=dispersion,
@@ -148,11 +150,12 @@ class SCVI(
         )
         self.module.minified_data_type = self.minified_data_type
         self._model_summary_string = (
-            "SCVI Model with the following params: \nn_hidden: {}, n_latent: {}, n_layers: {}, dropout_rate: "
+            "SCVI Model with the following params: \nn_hidden: {}, n_z1: {},n_z2: {}, n_layers: {}, dropout_rate: "
             "{}, dispersion: {}, gene_likelihood: {}, latent_distribution: {}"
         ).format(
             n_hidden,
-            n_latent,
+            n_z1,
+            n_z2,
             n_layers,
             dropout_rate,
             dispersion,
@@ -170,8 +173,8 @@ class SCVI(
         batch_key: Optional[str] = None,
         labels_key: Optional[str] = None,
         size_factor_key: Optional[str] = None,
-        categorical_covariate_keys: Optional[list[str]] = None,
-        continuous_covariate_keys: Optional[list[str]] = None,
+        categorical_covariate_keys: Optional[List[str]] = None,
+        continuous_covariate_keys: Optional[List[str]] = None,
         **kwargs,
     ):
         """%(summary)s.
@@ -214,14 +217,14 @@ class SCVI(
     @staticmethod
     def _get_fields_for_adata_minification(
         minified_data_type: MinifiedDataType,
-    ) -> list[BaseAnnDataField]:
+    ) -> List[BaseAnnDataField]:
         """Return the anndata fields required for adata minification of the given minified_data_type."""
         if minified_data_type == ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
             fields = [
-                ObsmField(
-                    REGISTRY_KEYS.LATENT_QZM_KEY,
-                    _SCVI_LATENT_QZM,
-                ),
+                #ObsmField(
+                #    REGISTRY_KEYS.LATENT_QZM_KEY,
+                 #   _SCVI_LATENT_QZM,
+                #),'''
                 ObsmField(
                     REGISTRY_KEYS.LATENT_QZV_KEY,
                     _SCVI_LATENT_QZV,
@@ -283,7 +286,7 @@ class SCVI(
             )
 
         minified_adata = get_minified_adata_scrna(self.adata, minified_data_type)
-        minified_adata.obsm[_SCVI_LATENT_QZM] = self.adata.obsm[use_latent_qzm_key]
+        #minified_adata.obsm[_SCVI_LATENT_QZM] = self.adata.obsm[use_latent_qzm_key]
         minified_adata.obsm[_SCVI_LATENT_QZV] = self.adata.obsm[use_latent_qzv_key]
         counts = self.adata_manager.get_from_registry(REGISTRY_KEYS.X_KEY)
         minified_adata.obs[_SCVI_OBSERVED_LIB_SIZE] = np.squeeze(

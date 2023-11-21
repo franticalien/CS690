@@ -1,5 +1,4 @@
-from collections.abc import Iterable
-from typing import Optional
+from typing import Iterable, Optional
 
 import torch
 import torch.nn.functional as F

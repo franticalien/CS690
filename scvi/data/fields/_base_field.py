@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Union
+from typing import Optional, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -151,4 +151,4 @@ class BaseAnnDataField(ABC):
 
 
 # Convenience type
-AnnDataField = type[BaseAnnDataField]
+AnnDataField = Type[BaseAnnDataField]

@@ -1,6 +1,5 @@
 import collections
-from collections.abc import Iterable
-from typing import Callable, Literal, Optional
+from typing import Callable, Iterable, List, Literal, Optional
 
 import torch
 from torch import nn
@@ -152,7 +151,9 @@ class FCLayers(nn.Module):
         one_hot_cat_list = []  # for generality in this list many indices useless.
 
         if len(self.n_cat_list) > len(cat_list):
-            raise ValueError("nb. categorical args provided doesn't match init. params.")
+            raise ValueError(
+                "nb. categorical args provided doesn't match init. params."
+            )
         for n_cat, cat in zip(self.n_cat_list, cat_list):
             if n_cat and cat is None:
                 raise ValueError("cat not provided while n_cat != 0 in init. params.")
@@ -290,6 +291,166 @@ class Encoder(nn.Module):
         if self.return_dist:
             return dist, latent
         return q_m, q_v, latent
+
+
+# Encoder
+class Encoder1(nn.Module):
+    """Encode data of ``n_input`` dimensions into a latent space of ``n_output`` dimensions.
+
+    Uses a fully-connected neural network of ``n_hidden`` layers.
+
+    Parameters
+    ----------
+    n_input
+        The dimensionality of the input (data space)
+    n_output
+        The dimensionality of the output (latent space)
+    n_cat_list
+        A list containing the number of categories
+        for each category of interest. Each category will be
+        included using a one-hot encoding
+    n_layers
+        The number of fully-connected hidden layers
+    n_hidden
+        The number of nodes per hidden layer
+    dropout_rate
+        Dropout rate to apply to each of the hidden layers
+    distribution
+        Distribution of z
+    var_eps
+        Minimum value for the variance;
+        used for numerical stability
+    var_activation
+        Callable used to ensure positivity of the variance.
+        Defaults to :meth:`torch.exp`.
+    return_dist
+        Return directly the distribution of z instead of its parameters.
+    **kwargs
+        Keyword args for :class:`~scvi.nn.FCLayers`
+    """
+
+    def __init__(
+        self,
+        n_input: int,
+        n_z1: int,
+        n_z2: int,
+        n_samples: int=1,
+        # n_output: int,
+        n_cat_list: Iterable[int] = None,
+        n_layers: int = 1,
+        n_hidden: int = 128,
+        dropout_rate: float = 0.1,
+        distribution: str = "normal",
+        var_eps: float = 1e-4,
+        var_activation: Optional[Callable] = None,
+        return_dist: bool = False,
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.distribution = distribution
+        self.var_eps = var_eps
+        self.z1_encoder = FCLayers(
+            n_in=n_input,
+            n_out=n_hidden,
+            n_cat_list=n_cat_list,
+            n_layers=n_layers,
+            n_hidden=n_hidden,
+            dropout_rate=dropout_rate,
+            **kwargs,
+        )
+        self.z2_encoder = FCLayers(
+            n_in=2*n_z2 + n_input,
+            n_out=n_hidden,
+            # n_cat_list=n_cat_list,
+            n_layers=n_layers,
+            n_hidden=n_hidden,
+            dropout_rate=dropout_rate,
+            **kwargs,
+        )
+        self.nn1 = FCLayers(
+            n_in=3*n_z1,
+            n_out=2*n_z2,
+            # n_cat_list=n_cat_list,
+            n_layers=n_layers,
+            n_hidden=n_hidden,
+            dropout_rate=dropout_rate,
+            **kwargs,
+        )
+        self.z1_mean_encoder = nn.Linear(n_hidden, n_z1)
+        self.z2_mean_encoder = nn.Linear(n_hidden, n_z2)
+        self.z1_var_encoder = nn.Linear(n_hidden, n_z1)
+        self.z2_var_encoder = nn.Linear(n_hidden, n_z2)
+        self.return_dist = return_dist
+
+        # if distribution == "ln":
+        #     self.z_transformation = nn.Softmax(dim=-1)
+        # else:
+        self.z_transformation = _identity
+        self.var_activation = torch.exp if var_activation is None else var_activation
+        self.h = torch.cat([torch.zeros(n_z1), torch.ones(n_z1)]).view(1, -1)
+        # if n_samples > 1:
+        #     self.h = self.h*(torch.ones((n_samples,2*n_z1)))
+
+    def forward(self, x: torch.Tensor, *cat_list: int):
+        r"""The forward computation for a single sample.
+
+         #. Encodes the data into latent space using the encoder network
+         #. Generates a mean \\( q_m \\) and variance \\( q_v \\)
+         #. Samples a new value from an i.i.d. multivariate normal \\( \\sim Ne(q_m, \\mathbf{I}q_v) \\)
+
+        Parameters
+        ----------
+        x
+            tensor with shape (n_input,)
+        cat_list
+            list of category membership(s) for this sample
+
+        Returns
+        -------
+        3-tuple of :py:class:`torch.Tensor`
+            tensors of shape ``(n_latent,)`` for mean and var, and sample
+
+        """
+        # Parameters for latent distribution
+        qz1 = self.z1_encoder(x, *cat_list)
+        qz1_m = self.z1_mean_encoder(qz1)
+        qz1_v = self.var_activation(self.z1_var_encoder(qz1)) + self.var_eps
+        distqz1 = Normal(qz1_m, qz1_v.sqrt())
+        z1 = self.z_transformation(distqz1.rsample())
+        # if n_samples > 1:
+        #     untran_z1 = distz1.rsample((n_samples,))
+        #     z1 = self.z_transformation(untran_z)
+        #print(z1)
+        #print(z1.shape)
+        #print(self.h)
+        #print(self.h.shape)
+        h_hat = self.h*torch.ones((z1.shape[0],self.h.shape[1]))
+        z1_h = torch.cat([z1,h_hat],axis=1)
+        z1_h = self.nn1(z1_h)
+        z1_h_x = torch.cat([z1_h,x],axis=1)
+
+        qz2 = self.z2_encoder(z1_h_x)
+        qz2_m = self.z2_mean_encoder(qz2)
+        qz2_v = self.var_activation(self.z2_var_encoder(qz2)) + self.var_eps
+        distqz2 = Normal(qz2_m, qz2_v.sqrt())
+        z2 = self.z_transformation(distqz2.rsample())
+        z = torch.cat([z2,z1_h],axis=1)
+
+        pz1_m, pz1_v = torch.chunk(h_hat, 2, dim=1)
+        distpz1 = Normal(pz1_m, pz1_v.sqrt()+self.var_eps)
+
+        pz2_m, pz2_v = torch.chunk(z1_h, 2, dim=1)
+        pz2_v = self.var_activation(pz2_v) + self.var_eps
+
+        distpz2 = Normal(pz2_m, pz2_v.sqrt())
+        z2_prior = self.z_transformation(distpz2.rsample())
+        z_prior = torch.cat([z2_prior,z1_h],axis=1)
+
+
+        if self.return_dist:
+            return distqz1, distqz2, distpz1, distpz2, z1, z2, z2, z2_prior
+        return qz1_m, qz1_v, qz2_m, qz2_v, pz1_m, pz1_v, pz2_m, pz2_v, z1, z2, z2, z2_prior
 
 
 # Decoder
@@ -554,7 +715,7 @@ class MultiEncoder(nn.Module):
     def __init__(
         self,
         n_heads: int,
-        n_input_list: list[int],
+        n_input_list: List[int],
         n_output: int,
         n_hidden: int = 128,
         n_layers_individual: int = 1,

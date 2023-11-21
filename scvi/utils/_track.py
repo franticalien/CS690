@@ -1,6 +1,5 @@
 import sys
-from collections.abc import Iterable
-from typing import Literal
+from typing import Iterable, Literal
 
 from rich.console import Console
 from rich.progress import track as track_base

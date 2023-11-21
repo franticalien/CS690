@@ -1,7 +1,6 @@
 """Main module."""
 import logging
-from collections.abc import Iterable
-from typing import Callable, Literal, Optional
+from typing import Callable, Iterable, Literal, Optional
 
 import numpy as np
 import torch
@@ -15,12 +14,12 @@ from scvi.autotune._types import Tunable
 from scvi.data._constants import ADATA_MINIFY_TYPE
 from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBinomial
 from scvi.module.base import BaseMinifiedModeModuleClass, LossOutput, auto_move_data
-from scvi.nn import DecoderSCVI, Encoder, LinearDecoderSCVI, one_hot
+from scvi.nn import DecoderSCVI, Encoder, Encoder1, LinearDecoderSCVI, one_hot
 
 torch.backends.cudnn.benchmark = True
 
 logger = logging.getLogger(__name__)
-
+print("LUND")
 
 class VAE(BaseMinifiedModeModuleClass):
     """Variational auto-encoder model.
@@ -102,8 +101,11 @@ class VAE(BaseMinifiedModeModuleClass):
         n_batch: int = 0,
         n_labels: int = 0,
         n_hidden: Tunable[int] = 128,
-        n_latent: Tunable[int] = 10,
+        # n_latent: Tunable[int] = 10,
+        n_z1: int = 10,
+        n_z2: int = 20,
         n_layers: Tunable[int] = 1,
+        z2_weight: float = 1.0,
         n_continuous_cov: int = 0,
         n_cats_per_cov: Optional[Iterable[int]] = None,
         dropout_rate: Tunable[float] = 0.1,
@@ -127,7 +129,9 @@ class VAE(BaseMinifiedModeModuleClass):
     ):
         super().__init__()
         self.dispersion = dispersion
-        self.n_latent = n_latent
+        #self.n_latent = n_latent
+        self.n_z1 = n_z1 
+        self.n_z2 = n_z2
         self.log_variational = log_variational
         self.gene_likelihood = gene_likelihood
         # Automatically deactivate if useless
@@ -135,6 +139,7 @@ class VAE(BaseMinifiedModeModuleClass):
         self.n_labels = n_labels
         self.latent_distribution = latent_distribution
         self.encode_covariates = encode_covariates
+        self.z2_weight = z2_weight
 
         self.use_size_factor_key = use_size_factor_key
         self.use_observed_lib_size = use_size_factor_key or use_observed_lib_size
@@ -178,9 +183,11 @@ class VAE(BaseMinifiedModeModuleClass):
         cat_list = [n_batch] + list([] if n_cats_per_cov is None else n_cats_per_cov)
         encoder_cat_list = cat_list if encode_covariates else None
         _extra_encoder_kwargs = extra_encoder_kwargs or {}
-        self.z_encoder = Encoder(
+        self.z_encoder = Encoder1(
             n_input_encoder,
-            n_latent,
+            # n_latent,
+            n_z1=n_z1,
+            n_z2=n_z2,
             n_cat_list=encoder_cat_list,
             n_layers=n_layers,
             n_hidden=n_hidden,
@@ -209,7 +216,7 @@ class VAE(BaseMinifiedModeModuleClass):
             **_extra_encoder_kwargs,
         )
         # decoder goes from n_latent-dimensional space to n_input-d data
-        n_input_decoder = n_latent + n_continuous_cov
+        n_input_decoder = n_z2
         _extra_decoder_kwargs = extra_decoder_kwargs or {}
         self.decoder = DecoderSCVI(
             n_input_decoder,
@@ -263,6 +270,7 @@ class VAE(BaseMinifiedModeModuleClass):
 
     def _get_generative_input(self, tensors, inference_outputs):
         z = inference_outputs["z"]
+        z_prior = inference_outputs["z_prior"]
         library = inference_outputs["library"]
         batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
         y = tensors[REGISTRY_KEYS.LABELS_KEY]
@@ -282,6 +290,7 @@ class VAE(BaseMinifiedModeModuleClass):
 
         input_dict = {
             "z": z,
+            "z_prior": z_prior,
             "library": library,
             "batch_index": batch_index,
             "y": y,
@@ -334,7 +343,7 @@ class VAE(BaseMinifiedModeModuleClass):
             categorical_input = torch.split(cat_covs, 1, dim=1)
         else:
             categorical_input = ()
-        qz, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
+        qz1, qz2, pz1, pz2, z1, z2, z, z_prior = self.z_encoder(encoder_input, batch_index, *categorical_input)
         ql = None
         if not self.use_observed_lib_size:
             ql, library_encoded = self.l_encoder(
@@ -351,10 +360,10 @@ class VAE(BaseMinifiedModeModuleClass):
                 )
             else:
                 library = ql.sample((n_samples,))
-        outputs = {"z": z, "qz": qz, "ql": ql, "library": library}
+        outputs = {"z1": z1, "z2": z2, "z": z,"z_prior":z_prior, "qz1": qz1, "qz2": qz2, "pz1": pz1, "pz2": pz2, "ql": ql, "library": library}
         return outputs
 
-    @auto_move_data
+    '''@auto_move_data
     def _cached_inference(self, qzm, qzv, observed_lib_size, n_samples=1):
         if self.minified_data_type == ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
             dist = Normal(qzm, qzv.sqrt())
@@ -371,12 +380,13 @@ class VAE(BaseMinifiedModeModuleClass):
                 f"Unknown minified-data type: {self.minified_data_type}"
             )
         outputs = {"z": z, "qz_m": qzm, "qz_v": qzv, "ql": None, "library": library}
-        return outputs
+        return outputs'''
 
     @auto_move_data
     def generative(
         self,
         z,
+        z_prior,
         library,
         batch_index,
         cont_covs=None,
@@ -388,6 +398,8 @@ class VAE(BaseMinifiedModeModuleClass):
         """Runs the generative model."""
         # TODO: refactor forward function to not rely on y
         # Likelihood distribution
+        z = z_prior
+
         if cont_covs is None:
             decoder_input = z
         elif z.dim() != cont_covs.dim():
@@ -448,11 +460,11 @@ class VAE(BaseMinifiedModeModuleClass):
                 local_library_log_vars,
             ) = self._compute_local_library_params(batch_index)
             pl = Normal(local_library_log_means, local_library_log_vars.sqrt())
-        pz = Normal(torch.zeros_like(z), torch.ones_like(z))
+        # pz = Normal(torch.zeros_like(z), torch.ones_like(z))
         return {
             "px": px,
             "pl": pl,
-            "pz": pz,
+            # "pz": pz,
         }
 
     def loss(
@@ -464,9 +476,9 @@ class VAE(BaseMinifiedModeModuleClass):
     ):
         """Computes the loss function for the model."""
         x = tensors[REGISTRY_KEYS.X_KEY]
-        kl_divergence_z = kl(inference_outputs["qz"], generative_outputs["pz"]).sum(
-            dim=-1
-        )
+        kl_divergence_z1 = kl(inference_outputs["qz1"], inference_outputs["pz1"]).sum(dim=-1)
+        kl_divergence_z2 = kl(inference_outputs["qz2"], inference_outputs["pz2"]).sum(dim=-1)
+
         if not self.use_observed_lib_size:
             kl_divergence_l = kl(
                 inference_outputs["ql"],
@@ -477,20 +489,26 @@ class VAE(BaseMinifiedModeModuleClass):
 
         reconst_loss = -generative_outputs["px"].log_prob(x).sum(-1)
 
-        kl_local_for_warmup = kl_divergence_z
+        kl_local_for_warmup = kl_divergence_z1 + self.z2_weight*kl_divergence_z2
         kl_local_no_warmup = kl_divergence_l
 
         weighted_kl_local = kl_weight * kl_local_for_warmup + kl_local_no_warmup
 
         loss = torch.mean(reconst_loss + weighted_kl_local)
-
+        print(torch.mean(kl_divergence_l))
+        print(torch.mean(kl_divergence_z1))
+        print(torch.mean(kl_divergence_z2))
+        print("---------")
         kl_local = {
             "kl_divergence_l": kl_divergence_l,
-            "kl_divergence_z": kl_divergence_z,
+            "kl_divergence_z1": kl_divergence_z1,
+            "kl_divergence_z2": kl_divergence_z2,
         }
-        return LossOutput(loss=loss, reconstruction_loss=reconst_loss, kl_local=kl_local)
+        return LossOutput(
+            loss=loss, reconstruction_loss=reconst_loss, kl_local=kl_local
+        )
 
-    @torch.inference_mode()
+    '''@torch.inference_mode()
     def sample(
         self,
         tensors,
@@ -617,7 +635,7 @@ class VAE(BaseMinifiedModeModuleClass):
             batch_log_lkl = torch.mean(batch_log_lkl).item()
         else:
             batch_log_lkl = batch_log_lkl.cpu()
-        return batch_log_lkl
+        return batch_log_lkl'''
 
 
 class LDVAE(VAE):

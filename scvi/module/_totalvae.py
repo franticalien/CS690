@@ -1,6 +1,5 @@
 """Main module."""
-from collections.abc import Iterable
-from typing import Literal, Optional, Union
+from typing import Dict, Iterable, Literal, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -123,7 +122,7 @@ class TOTALVAE(BaseModuleClass):
         log_variational: bool = True,
         gene_likelihood: Tunable[Literal["zinb", "nb"]] = "nb",
         latent_distribution: Tunable[Literal["normal", "ln"]] = "normal",
-        protein_batch_mask: dict[Union[str, int], np.ndarray] = None,
+        protein_batch_mask: Dict[Union[str, int], np.ndarray] = None,
         encode_covariates: bool = True,
         protein_background_prior_mean: Optional[np.ndarray] = None,
         protein_background_prior_scale: Optional[np.ndarray] = None,
@@ -263,7 +262,7 @@ class TOTALVAE(BaseModuleClass):
         batch_index: Optional[torch.Tensor] = None,
         label: Optional[torch.Tensor] = None,
         n_samples: int = 1,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Returns the tensors of dispersions for genes and proteins.
 
         Parameters
@@ -295,10 +294,10 @@ class TOTALVAE(BaseModuleClass):
         self,
         x: torch.Tensor,
         y: torch.Tensor,
-        px_dict: dict[str, torch.Tensor],
-        py_dict: dict[str, torch.Tensor],
+        px_dict: Dict[str, torch.Tensor],
+        py_dict: Dict[str, torch.Tensor],
         pro_batch_mask_minibatch: Optional[torch.Tensor] = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute reconstruction loss."""
         px_ = px_dict
         py_ = py_dict
@@ -313,7 +312,9 @@ class TOTALVAE(BaseModuleClass):
             )
         else:
             reconst_loss_gene = (
-                -NegativeBinomial(mu=px_["rate"], theta=px_["r"]).log_prob(x).sum(dim=-1)
+                -NegativeBinomial(mu=px_["rate"], theta=px_["r"])
+                .log_prob(x)
+                .sum(dim=-1)
             )
 
         py_conditional = NegativeBinomialMixture(
@@ -391,7 +392,7 @@ class TOTALVAE(BaseModuleClass):
         cat_covs=None,
         size_factor=None,
         transform_batch: Optional[int] = None,
-    ) -> dict[str, Union[torch.Tensor, dict[str, torch.Tensor]]]:
+    ) -> Dict[str, Union[torch.Tensor, Dict[str, torch.Tensor]]]:
         """Run the generative step."""
         if cont_covs is None:
             decoder_input = z
@@ -453,7 +454,7 @@ class TOTALVAE(BaseModuleClass):
         n_samples=1,
         cont_covs=None,
         cat_covs=None,
-    ) -> dict[str, Union[torch.Tensor, dict[str, torch.Tensor]]]:
+    ) -> Dict[str, Union[torch.Tensor, Dict[str, torch.Tensor]]]:
         """Internal helper function to compute necessary inference quantities.
 
         We use the dictionary ``px_`` to contain the parameters of the ZINB/NB for genes.
@@ -571,7 +572,7 @@ class TOTALVAE(BaseModuleClass):
         generative_outputs,
         pro_recons_weight=1.0,  # double check these defaults
         kl_weight=1.0,
-    ) -> tuple[
+    ) -> Tuple[
         torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor
     ]:
         """Returns the reconstruction loss and the Kullback divergences.

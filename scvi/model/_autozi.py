@@ -1,6 +1,5 @@
 import logging
-from collections.abc import Sequence
-from typing import Literal, Optional, Union
+from typing import Dict, Literal, Optional, Sequence, Union
 
 import numpy as np
 import torch
@@ -155,7 +154,7 @@ class AUTOZI(VAEMixin, UnsupervisedTrainingMixin, BaseModelClass):
 
     def get_alphas_betas(
         self, as_numpy: bool = True
-    ) -> dict[str, Union[torch.Tensor, np.ndarray]]:
+    ) -> Dict[str, Union[torch.Tensor, np.ndarray]]:
         """Return parameters of Bernoulli Beta distributions in a dictionary."""
         return self.module.get_alphas_betas(as_numpy=as_numpy)
 

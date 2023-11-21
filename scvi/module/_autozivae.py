@@ -1,4 +1,4 @@
-from typing import Literal, Optional, Union
+from typing import Dict, Literal, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -110,7 +110,9 @@ class AutoZIVAE(VAE):
                 torch.randn(n_input, self.n_batch)
             )
             if alpha_prior is None:
-                self.alpha_prior_logit = torch.nn.parameter(torch.randn(1, self.n_batch))
+                self.alpha_prior_logit = torch.nn.parameter(
+                    torch.randn(1, self.n_batch)
+                )
             else:
                 self.register_buffer(
                     "alpha_prior_logit", torch.tensor([logit(alpha_prior)])
@@ -138,7 +140,9 @@ class AutoZIVAE(VAE):
                     "alpha_prior_logit", torch.tensor([logit(alpha_prior)])
                 )
             if beta_prior is None:
-                self.beta_prior_logit = torch.nn.parameter(torch.randn(1, self.n_labels))
+                self.beta_prior_logit = torch.nn.parameter(
+                    torch.randn(1, self.n_labels)
+                )
             else:
                 self.register_buffer(
                     "beta_prior_logit", torch.tensor([logit(beta_prior)])
@@ -149,7 +153,7 @@ class AutoZIVAE(VAE):
 
     def get_alphas_betas(
         self, as_numpy: bool = True
-    ) -> dict[str, Union[torch.Tensor, np.ndarray]]:
+    ) -> Dict[str, Union[torch.Tensor, np.ndarray]]:
         """Get the parameters of the Bernoulli beta prior and posterior distributions."""
         # Return parameters of Bernoulli Beta distributions in a dictionary
         outputs = {}
@@ -244,7 +248,9 @@ class AutoZIVAE(VAE):
 
         if n_samples > 1:
             alpha_posterior = (
-                alpha_posterior.unsqueeze(0).expand((n_samples, alpha_posterior.size(0)))
+                alpha_posterior.unsqueeze(0).expand(
+                    (n_samples, alpha_posterior.size(0))
+                )
                 if self.zero_inflation == "gene"
                 else alpha_posterior.unsqueeze(0).expand(
                     (n_samples, alpha_posterior.size(0), alpha_posterior.size(1))
@@ -291,7 +297,7 @@ class AutoZIVAE(VAE):
         cat_covs=None,
         n_samples: int = 1,
         eps_log: float = 1e-8,
-    ) -> dict[str, torch.Tensor]:
+    ) -> Dict[str, torch.Tensor]:
         """Run the generative model."""
         outputs = super().generative(
             z=z,
@@ -303,7 +309,9 @@ class AutoZIVAE(VAE):
             size_factor=size_factor,
         )
         # Rescale dropout
-        rescaled_dropout = self.rescale_dropout(outputs["px"].zi_logits, eps_log=eps_log)
+        rescaled_dropout = self.rescale_dropout(
+            outputs["px"].zi_logits, eps_log=eps_log
+        )
         outputs["px"] = ZeroInflatedNegativeBinomial(
             mu=outputs["px"].mu,
             theta=outputs["px"].theta,
@@ -345,7 +353,9 @@ class AutoZIVAE(VAE):
             1.0 - bernoulli_params + eps_log
         ) + ZeroInflatedNegativeBinomial(
             mu=px_rate, theta=px_r, zi_logits=px_dropout
-        ).log_prob(x)
+        ).log_prob(
+            x
+        )
         ll_nb = torch.log(bernoulli_params + eps_log) + NegativeBinomial(
             mu=px_rate, theta=px_r
         ).log_prob(x)
@@ -367,7 +377,7 @@ class AutoZIVAE(VAE):
         generative_outputs,
         kl_weight: int = 1.0,
         n_obs: int = 1.0,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute the loss."""
         # Parameters for z latent distribution
         qz = inference_outputs["qz"]

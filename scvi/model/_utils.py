@@ -1,8 +1,7 @@
 import logging
 import warnings
 from collections.abc import Iterable as IterableClass
-from collections.abc import Sequence
-from typing import Literal, Optional, Union
+from typing import Dict, List, Literal, Optional, Sequence, Tuple, Union
 
 import jax
 import numpy as np
@@ -74,7 +73,7 @@ def get_max_epochs_heuristic(
 @devices_dsp.dedent
 def parse_device_args(
     accelerator: str = "auto",
-    devices: Union[int, list[int], str] = "auto",
+    devices: Union[int, List[int], str] = "auto",
     return_device: Optional[Literal["torch", "jax"]] = None,
     validate_single_device: bool = False,
 ):
@@ -153,10 +152,10 @@ def parse_device_args(
 
 def scrna_raw_counts_properties(
     adata_manager: AnnDataManager,
-    idx1: Union[list[int], np.ndarray],
-    idx2: Union[list[int], np.ndarray],
-    var_idx: Optional[Union[list[int], np.ndarray]] = None,
-) -> dict[str, np.ndarray]:
+    idx1: Union[List[int], np.ndarray],
+    idx2: Union[List[int], np.ndarray],
+    var_idx: Optional[Union[List[int], np.ndarray]] = None,
+) -> Dict[str, np.ndarray]:
     """Computes and returns some statistics on the raw counts of two sub-populations.
 
     Parameters
@@ -220,9 +219,9 @@ def scrna_raw_counts_properties(
 
 def cite_seq_raw_counts_properties(
     adata_manager: AnnDataManager,
-    idx1: Union[list[int], np.ndarray],
-    idx2: Union[list[int], np.ndarray],
-) -> dict[str, np.ndarray]:
+    idx1: Union[List[int], np.ndarray],
+    idx2: Union[List[int], np.ndarray],
+) -> Dict[str, np.ndarray]:
     """Computes and returns some statistics on the raw counts of two sub-populations.
 
     Parameters
@@ -267,10 +266,10 @@ def cite_seq_raw_counts_properties(
 
 def scatac_raw_counts_properties(
     adata_manager: AnnDataManager,
-    idx1: Union[list[int], np.ndarray],
-    idx2: Union[list[int], np.ndarray],
-    var_idx: Optional[Union[list[int], np.ndarray]] = None,
-) -> dict[str, np.ndarray]:
+    idx1: Union[List[int], np.ndarray],
+    idx2: Union[List[int], np.ndarray],
+    var_idx: Optional[Union[List[int], np.ndarray]] = None,
+) -> Dict[str, np.ndarray]:
     """Computes and returns some statistics on the raw counts of two sub-populations.
 
     Parameters
@@ -324,7 +323,7 @@ def _get_batch_code_from_category(
 
 def _init_library_size(
     adata_manager: AnnDataManager, n_batch: dict
-) -> tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray]:
     """Computes and returns library size.
 
     Parameters

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import logging
 import warnings
-from collections.abc import Sequence
 from copy import deepcopy
-from typing import Literal
+from typing import Literal, Sequence
 
 import numpy as np
 import pandas as pd
@@ -279,7 +278,9 @@ class SCANVI(RNASeqMixin, VAEMixin, ArchesMixin, BaseMinifiedModeModelClass):
         self._label_mapping = labels_state_registry.categorical_mapping
 
         # set unlabeled and labeled indices
-        self._unlabeled_indices = np.argwhere(labels == self.unlabeled_category_).ravel()
+        self._unlabeled_indices = np.argwhere(
+            labels == self.unlabeled_category_
+        ).ravel()
         self._labeled_indices = np.argwhere(labels != self.unlabeled_category_).ravel()
         self._code_to_label = dict(enumerate(self._label_mapping))
 
@@ -418,7 +419,9 @@ class SCANVI(RNASeqMixin, VAEMixin, ArchesMixin, BaseMinifiedModeModelClass):
         datasplitter_kwargs = datasplitter_kwargs or {}
 
         # if we have labeled cells, we want to subsample labels each epoch
-        sampler_callback = [SubSampleLabels()] if len(self._labeled_indices) != 0 else []
+        sampler_callback = (
+            [SubSampleLabels()] if len(self._labeled_indices) != 0 else []
+        )
 
         data_splitter = SemiSupervisedDataSplitter(
             adata_manager=self.adata_manager,
@@ -433,7 +436,7 @@ class SCANVI(RNASeqMixin, VAEMixin, ArchesMixin, BaseMinifiedModeModelClass):
             self.module, self.n_labels, **plan_kwargs
         )
         if "callbacks" in trainer_kwargs.keys():
-            trainer_kwargs["callbacks"] + [sampler_callback]
+            trainer_kwargs["callbacks"].concatenate(sampler_callback)
         else:
             trainer_kwargs["callbacks"] = sampler_callback
 
@@ -455,7 +458,7 @@ class SCANVI(RNASeqMixin, VAEMixin, ArchesMixin, BaseMinifiedModeModelClass):
         cls,
         adata: AnnData,
         labels_key: str,
-        unlabeled_category: str,
+        unlabeled_category: str | int | float,
         layer: str | None = None,
         batch_key: str | None = None,
         size_factor_key: str | None = None,

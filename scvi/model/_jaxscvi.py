@@ -1,6 +1,5 @@
 import logging
-from collections.abc import Sequence
-from typing import Literal, Optional
+from typing import Literal, Optional, Sequence
 
 import jax.numpy as jnp
 import numpy as np

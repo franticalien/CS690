@@ -1,7 +1,6 @@
 import collections.abc
 import logging
-from collections.abc import Sequence
-from typing import Optional, Union
+from typing import Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd

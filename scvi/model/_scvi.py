@@ -333,7 +333,7 @@ class SCVI(
             print(pca_matrix.shape)
             pca_matrix[:,labels!=1] = 0
             matrix_list.append(pca_matrix)
-        self.M = np.concatenate(matrix_list,axis=0)
+        self.M = torch.tensor(np.concatenate(matrix_list,axis=0))
 
 
 

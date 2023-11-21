@@ -1,6 +1,7 @@
 import logging
 from typing import List, Literal, Optional
 
+import torch
 import numpy as np
 from anndata import AnnData
 import scanpy as sc

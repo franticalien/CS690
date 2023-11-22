@@ -99,6 +99,7 @@ class VAE(BaseMinifiedModeModuleClass):
         self,
         n_input: int,
         M,
+        means,
         highly_variable,
         n_batch: int = 0,
         n_labels: int = 0,
@@ -136,6 +137,7 @@ class VAE(BaseMinifiedModeModuleClass):
         self.n_z2 = n_z2
         self.n_z = n_z
         self.M = M
+        self.means = means
         self.highly_variable = highly_variable
         self.log_variational = log_variational
         self.gene_likelihood = gene_likelihood
@@ -194,6 +196,7 @@ class VAE(BaseMinifiedModeModuleClass):
             n_z2=n_z2,
             n_z = n_z,
             M = M,
+            means = means,
             highly_variable = highly_variable,
             n_cat_list=encoder_cat_list,
             n_layers=n_layers,

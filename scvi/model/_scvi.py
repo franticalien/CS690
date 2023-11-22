@@ -136,10 +136,12 @@ class SCVI(
         sc.pp.highly_variable_genes(adata, n_top_genes=n_hvg, flavor="cell_ranger", batch_key="batch",subset = False)
         self.highly_variable = adata.var["highly_variable"]
         self.M = None # n_pcs*n_clusters X n_genes
+        self.means = None
         self.hkmkb(adata,n_clusters,n_pcs)
         self.module = self._module_cls(
             n_input=self.summary_stats.n_vars,
             M = self.M,
+            means = self.means,
             highly_variable = self.highly_variable,
             n_batch=n_batch,
             n_labels=self.summary_stats.n_labels,
@@ -322,20 +324,28 @@ class SCVI(
             random_state=0)
         clf.fit_predict(matrix.T)
         print("Clustering Done")
-        print(matrix.shape)
         labels = clf.labels_
+        print(matrix)
         for i in range(n_clusters):
             matrix_copy = matrix.copy()
-
             matrix_copy[:,labels!=i] = 0
+            print(matrix_copy)
             pca = PCA(n_components=n_pcs)
             pca.fit(matrix_copy)
             pca_matrix = pca.components_
-            print(pca_matrix.shape)
-            pca_matrix[:,labels!=1] = 0
+            pca_matrix[:,labels!=i] = 0
             matrix_list.append(pca_matrix)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        print(matrix_list)
+        self.means = torch.from_numpy(np.mean(matrix,axis=0)).to(device)
         self.M = torch.tensor(np.concatenate(matrix_list,axis=0)).to(device)
+        print(self.M)
+        '''matrix = np.asarray(adata.X.todense())
+        pca = PCA(n_components=n_pcs)
+        pca.fit(matrix.copy())
+        #tmp = pca.fit_transform(matrix.copy())
+        self.M = pca
+        print(self.M.transform(matrix.copy()))'''
 
 
 

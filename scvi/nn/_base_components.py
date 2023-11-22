@@ -336,6 +336,7 @@ class Encoder1(nn.Module):
         n_z2: int,
         n_z: int,
         M,
+        means,
         highly_variable,
         n_samples: int=1,
         # n_output: int,
@@ -351,6 +352,7 @@ class Encoder1(nn.Module):
     ):
         super().__init__()
         self.M = M
+        self.means = means
         self.highly_variable = highly_variable
         self.distribution = distribution
         self.var_eps = var_eps
@@ -429,8 +431,10 @@ class Encoder1(nn.Module):
 
         """
         # Parameters for latent distribution
+
+        #x_ll = torch.from_numpy(self.M.transform(x.cpu())).to(self.device).float()
         x_hvg = x[:,self.highly_variable]
-        x_ll = torch.matmul(x_hvg,self.M.T)
+        x_ll = torch.matmul(x_hvg-self.means,self.M.T)
         qz1 = self.z1_encoder(x_ll, *cat_list)
         qz1_m = self.z1_mean_encoder(qz1)
         qz1_v = self.var_activation(self.z1_var_encoder(qz1)) + self.var_eps

@@ -15,7 +15,7 @@ from scvi.autotune._types import Tunable
 from scvi.data._constants import ADATA_MINIFY_TYPE
 from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBinomial
 from scvi.module.base import BaseMinifiedModeModuleClass, LossOutput, auto_move_data
-from scvi.nn import DecoderSCVI, Encoder, LinearDecoderSCVI, one_hot
+from scvi.nn import DecoderSCVI, Encoder, LinearDecoderSCVI, one_hot,Encoder1
 
 torch.backends.cudnn.benchmark = True
 
@@ -104,6 +104,7 @@ class VAE(BaseMinifiedModeModuleClass):
         n_hidden: Tunable[int] = 128,
         n_latent: Tunable[int] = 10,
         n_layers: Tunable[int] = 1,
+        n_clusters: int = 2,
         n_continuous_cov: int = 0,
         n_cats_per_cov: Optional[Iterable[int]] = None,
         dropout_rate: Tunable[float] = 0.1,
@@ -178,12 +179,13 @@ class VAE(BaseMinifiedModeModuleClass):
         cat_list = [n_batch] + list([] if n_cats_per_cov is None else n_cats_per_cov)
         encoder_cat_list = cat_list if encode_covariates else None
         _extra_encoder_kwargs = extra_encoder_kwargs or {}
-        self.z_encoder = Encoder(
+        self.z_encoder = Encoder1(
             n_input_encoder,
             n_latent,
             n_cat_list=encoder_cat_list,
             n_layers=n_layers,
             n_hidden=n_hidden,
+            n_clusters=n_clusters,
             dropout_rate=dropout_rate,
             distribution=latent_distribution,
             inject_covariates=deeply_inject_covariates,
@@ -263,6 +265,7 @@ class VAE(BaseMinifiedModeModuleClass):
 
     def _get_generative_input(self, tensors, inference_outputs):
         z = inference_outputs["z"]
+        pz = inference_outputs["pz"]
         library = inference_outputs["library"]
         batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
         y = tensors[REGISTRY_KEYS.LABELS_KEY]
@@ -282,6 +285,7 @@ class VAE(BaseMinifiedModeModuleClass):
 
         input_dict = {
             "z": z,
+            "pz": pz,
             "library": library,
             "batch_index": batch_index,
             "y": y,
@@ -334,7 +338,7 @@ class VAE(BaseMinifiedModeModuleClass):
             categorical_input = torch.split(cat_covs, 1, dim=1)
         else:
             categorical_input = ()
-        qz, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
+        qz, z, pz = self.z_encoder(encoder_input, batch_index, *categorical_input)
         ql = None
         if not self.use_observed_lib_size:
             ql, library_encoded = self.l_encoder(
@@ -351,7 +355,7 @@ class VAE(BaseMinifiedModeModuleClass):
                 )
             else:
                 library = ql.sample((n_samples,))
-        outputs = {"z": z, "qz": qz, "ql": ql, "library": library}
+        outputs = {"z": z, "pz": pz, "qz": qz, "ql": ql, "library": library}
         return outputs
 
     @auto_move_data
@@ -377,6 +381,7 @@ class VAE(BaseMinifiedModeModuleClass):
     def generative(
         self,
         z,
+        pz,
         library,
         batch_index,
         cont_covs=None,
@@ -448,7 +453,7 @@ class VAE(BaseMinifiedModeModuleClass):
                 local_library_log_vars,
             ) = self._compute_local_library_params(batch_index)
             pl = Normal(local_library_log_means, local_library_log_vars.sqrt())
-        pz = Normal(torch.zeros_like(z), torch.ones_like(z))
+        # pz = Normal(torch.zeros_like(z), torch.ones_like(z))
         return {
             "px": px,
             "pl": pl,

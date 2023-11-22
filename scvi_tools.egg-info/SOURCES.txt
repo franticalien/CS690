@@ -125,7 +125,6 @@ scvi/module/_scanvae.py
 scvi/module/_totalvae.py
 scvi/module/_utils.py
 scvi/module/_vae.py
-scvi/module/_vae_2].py
 scvi/module/_vaec.py
 scvi/module/base/__init__.py
 scvi/module/base/_base_module.py

@@ -299,7 +299,10 @@ class BaseMinifiedModeModuleClass(BaseModuleClass):
 
         Branches off to regular or cached inference depending on whether we have a minified adata
         that contains the latent posterior parameters.
+
         """
+        return self._regular_inference(*args, **kwargs)
+        '''
         if (
             self.minified_data_type is not None
             and self.minified_data_type == ADATA_MINIFY_TYPE.LATENT_POSTERIOR
@@ -307,7 +310,7 @@ class BaseMinifiedModeModuleClass(BaseModuleClass):
             return self._cached_inference(*args, **kwargs)
         else:
             return self._regular_inference(*args, **kwargs)
-
+        '''
 
 def _get_dict_if_none(param):
     param = {} if not isinstance(param, dict) else param

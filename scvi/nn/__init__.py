@@ -3,6 +3,7 @@ from ._base_components import (
     DecoderSCVI,
     DecoderTOTALVI,
     Encoder,
+    Encoder1,
     EncoderTOTALVI,
     FCLayers,
     LinearDecoderSCVI,
@@ -14,6 +15,7 @@ from ._utils import one_hot
 __all__ = [
     "FCLayers",
     "Encoder",
+    "Encoder1",
     "EncoderTOTALVI",
     "Decoder",
     "DecoderSCVI",

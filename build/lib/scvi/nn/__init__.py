@@ -4,6 +4,7 @@ from ._base_components import (
     DecoderTOTALVI,
     Encoder,
     Encoder1,
+    Encoder2,
     EncoderTOTALVI,
     FCLayers,
     LinearDecoderSCVI,

@@ -136,7 +136,7 @@ class SCVI(
             library_log_means, library_log_vars = _init_library_size(
                 self.adata_manager, n_batch
             )
-        sc.pp.highly_variable_genes(adata, n_top_genes=n_hvg, flavor="cell_ranger", batch_key="batch",subset = False)
+        #sc.pp.highly_variable_genes(adata, n_top_genes=n_hvg, flavor="cell_ranger", batch_key="batch",subset = False)
         self.highly_variable = adata.var["highly_variable"]
         self.M = None # n_pcs*n_clusters X n_genes
         self.means = None
@@ -323,7 +323,7 @@ class SCVI(
     ):
         matrix_list = []
         num_genes = np.sum(self.highly_variable)
-        matrix = np.asarray(adata.X.todense())[:,self.highly_variable]
+        matrix = np.asarray(adata.X)[:,self.highly_variable]
         print("Starting Clustering")
         clf = KMeansConstrained(n_clusters=n_clusters,
             size_min=num_genes/n_clusters,

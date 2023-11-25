@@ -14,7 +14,7 @@ from scvi.autotune._types import Tunable
 from scvi.data._constants import ADATA_MINIFY_TYPE
 from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBinomial
 from scvi.module.base import BaseMinifiedModeModuleClass, LossOutput, auto_move_data
-from scvi.nn import DecoderSCVI, Encoder, Encoder1, LinearDecoderSCVI, one_hot
+from scvi.nn import DecoderSCVI, Encoder, Encoder1, LinearDecoderSCVI, one_hot, Encoder2
 
 torch.backends.cudnn.benchmark = True
 

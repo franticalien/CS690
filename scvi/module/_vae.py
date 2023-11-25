@@ -189,16 +189,32 @@ class VAE(BaseMinifiedModeModuleClass):
         cat_list = [n_batch] + list([] if n_cats_per_cov is None else n_cats_per_cov)
         encoder_cat_list = cat_list if encode_covariates else None
         _extra_encoder_kwargs = extra_encoder_kwargs or {}
-        self.z_encoder = Encoder1(
-            n_input=n_input_encoder,
-            n_latent=n_latent,
-            n_levels=n_levels,
-            n_dims=n_dims,
-            n_z1=n_z1,
-            n_delta=n_delta,
-            M = M,
-            means = means,
-            highly_variable = highly_variable,
+        # self.z_encoder = Encoder1(
+        #     n_input=n_input_encoder,
+        #     n_latent=n_latent,
+        #     n_levels=n_levels,
+        #     n_dims=n_dims,
+        #     n_z1=n_z1,
+        #     n_delta=n_delta,
+        #     M = M,
+        #     means = means,
+        #     highly_variable = highly_variable,
+        #     n_cat_list=encoder_cat_list,
+        #     n_layers=n_layers,
+        #     n_hidden=n_hidden,
+        #     dropout_rate=dropout_rate,
+        #     distribution=latent_distribution,
+        #     inject_covariates=deeply_inject_covariates,
+        #     use_batch_norm=use_batch_norm_encoder,
+        #     use_layer_norm=use_layer_norm_encoder,
+        #     var_activation=var_activation,
+        #     return_dist=True,
+        #     **_extra_encoder_kwargs,
+        # )
+
+        self.z_encoder = Encoder2(
+            n_input_encoder,
+            n_latent,
             n_cat_list=encoder_cat_list,
             n_layers=n_layers,
             n_hidden=n_hidden,

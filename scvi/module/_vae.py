@@ -104,10 +104,10 @@ class VAE(BaseMinifiedModeModuleClass):
         n_batch: int = 0,
         n_labels: int = 0,
         n_hidden: Tunable[int] = 128,
-        # n_latent: Tunable[int] = 10,
+        n_latent: Tunable[int] = 30,
+        n_levels: int = 2,
         n_z1: int = 10,
-        n_z2: int = 20,
-        n_z: int = 30,
+        n_delta: int = 10,
         n_layers: Tunable[int] = 1,
         n_continuous_cov: int = 0,
         n_cats_per_cov: Optional[Iterable[int]] = None,
@@ -133,9 +133,7 @@ class VAE(BaseMinifiedModeModuleClass):
         super().__init__()
         self.dispersion = dispersion
         #self.n_latent = n_latent
-        self.n_z1 = n_z1 
-        self.n_z2 = n_z2
-        self.n_z = n_z
+        self.n_latent = n_latent
         self.M = M
         self.means = means
         self.highly_variable = highly_variable
@@ -190,11 +188,12 @@ class VAE(BaseMinifiedModeModuleClass):
         encoder_cat_list = cat_list if encode_covariates else None
         _extra_encoder_kwargs = extra_encoder_kwargs or {}
         self.z_encoder = Encoder1(
-            n_input_encoder,
-            # n_latent,
+            n_input=n_input_encoder,
+            n_latent=n_latent,
+            n_levels=n_levels,
+            n_dims=n_dims,
             n_z1=n_z1,
-            n_z2=n_z2,
-            n_z = n_z,
+            n_delta=n_delta,
             M = M,
             means = means,
             highly_variable = highly_variable,
@@ -351,7 +350,9 @@ class VAE(BaseMinifiedModeModuleClass):
             categorical_input = torch.split(cat_covs, 1, dim=1)
         else:
             categorical_input = ()
-        qz1, qz2, pz1, pz2, z1, z2, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
+
+        qz, pz, z_smp, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
+        # qz1, qz2, pz1, pz2, z1, z2, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
         ql = None
         if not self.use_observed_lib_size:
             ql, library_encoded = self.l_encoder(
@@ -368,7 +369,7 @@ class VAE(BaseMinifiedModeModuleClass):
                 )
             else:
                 library = ql.sample((n_samples,))
-        outputs = {"z1": z1, "z2": z2, "z": z, "qz1": qz1, "qz2": qz2, "pz1": pz1, "pz2": pz2, "ql": ql, "library": library}
+        outputs = {"z": z, "z_smp": z_smp, "z": z, "qz": qz, "pz": pz, "ql": ql, "library": library}
         return outputs
 
     '''@auto_move_data
@@ -481,8 +482,9 @@ class VAE(BaseMinifiedModeModuleClass):
     ):
         """Computes the loss function for the model."""
         x = tensors[REGISTRY_KEYS.X_KEY]
-        kl_divergence_z1 = kl(inference_outputs["qz1"], inference_outputs["pz1"]).sum(dim=-1)
-        kl_divergence_z2 = kl(inference_outputs["qz2"], inference_outputs["pz2"]).sum(dim=-1)
+        kl_divergence_z = []
+        for i in range(self.n_latent):
+            kl_divergence.append(kl(inference_outputs["qz"][i], inference_outputs["pz"][i]).sum(dim=-1))
 
         if not self.use_observed_lib_size:
             kl_divergence_l = kl(
@@ -494,7 +496,7 @@ class VAE(BaseMinifiedModeModuleClass):
 
         reconst_loss = -generative_outputs["px"].log_prob(x).sum(-1)
 
-        kl_local_for_warmup = kl_divergence_z1 + kl_divergence_z2
+        kl_local_for_warmup = sum(kl_divergence_z)
         kl_local_no_warmup = kl_divergence_l
 
         weighted_kl_local = kl_weight * kl_local_for_warmup + kl_local_no_warmup
@@ -503,8 +505,7 @@ class VAE(BaseMinifiedModeModuleClass):
 
         kl_local = {
             "kl_divergence_l": kl_divergence_l,
-            "kl_divergence_z1": kl_divergence_z1,
-            "kl_divergence_z2": kl_divergence_z2,
+            "kl_divergence_z": kl_divergence_z,
         }
         return LossOutput(
             loss=loss, reconstruction_loss=reconst_loss, kl_local=kl_local

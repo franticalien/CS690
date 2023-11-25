@@ -107,7 +107,9 @@ class SCVI(
         n_clusters: int = 10,
         n_pcs: int = 50,
         n_z1: int = 10,
-        n_z2: int = 20,
+        n_delta: int= 10,
+        n_levels: int = 2,
+        n_latent: int = 30,
         n_layers: int = 1,
         dropout_rate: float = 0.1,
         dispersion: Literal["gene", "gene-batch", "gene-label", "gene-cell"] = "gene",
@@ -148,8 +150,10 @@ class SCVI(
             n_continuous_cov=self.summary_stats.get("n_extra_continuous_covs", 0),
             n_cats_per_cov=n_cats_per_cov,
             n_hidden=n_hidden,
+            n_levels=n_levels,
+            n_latent=n_latent,
             n_z1 = n_z1,
-            n_z2 = n_z2,
+            n_delta=n_delta,
             n_layers=n_layers,
             dropout_rate=dropout_rate,
             dispersion=dispersion,
@@ -162,12 +166,12 @@ class SCVI(
         )
         self.module.minified_data_type = self.minified_data_type
         self._model_summary_string = (
-            "SCVI Model with the following params: \nn_hidden: {}, n_z1: {},n_z2: {}, n_layers: {}, dropout_rate: "
+            "SCVI Model with the following params: \nn_hidden: {}, n_latent: {}, n_levels: {},  n_layers: {}, dropout_rate: "
             "{}, dispersion: {}, gene_likelihood: {}, latent_distribution: {}"
         ).format(
             n_hidden,
-            n_z1,
-            n_z2,
+            n_latent,
+            n_levels,
             n_layers,
             dropout_rate,
             dispersion,

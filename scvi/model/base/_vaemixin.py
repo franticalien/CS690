@@ -180,9 +180,10 @@ class VAEMixin:
         scdl = self._make_data_loader(
             adata=adata, indices=indices, batch_size=batch_size
         )
+
+        n_latent = None
+        latent_z = None
         latent = []
-        latent_z1 = []
-        latent_z2 = []
        # latent_qz1v = []
        # latent_qz2v = []
         for tensors in scdl:
@@ -206,15 +207,24 @@ class VAEMixin:
             else:
                 z = outputs["z"]'''
             z = outputs["z"]
-            z1 = outputs['z1']
-            z2 = outputs['z2']
             latent += [z.cpu()]
-            latent_z1 += [z1.cpu()]
-            latent_z2 += [z2.cpu()]
+
+            z_smp = outputs["z_smp"]
+            if latent_z is None:
+                n_latent = len(z_smp)
+                latent_z = [[] for i in range(n_latent)]
+
+            for i in range(n_latent):
+                latent_z[i] += [z_smp[i].cpu()]
+
             #latent_qzm += [qz.loc.cpu()]
             #latent_qzv += [qz.scale.square().cpu()]
+
+        return_dict = {'z': torch.cat(latent).numpy()}
+        for i in range(n_latent):
+            return_dict['z' + str(i+1)] = torch.cat(latent_z[i]).numpy()
         return (
             (torch.cat(latent_qzm).numpy(), torch.cat(latent_qzv).numpy())
             if return_dist
-            else {'z':torch.cat(latent).numpy(),'z1':torch.cat(latent_z1).numpy(),'z2':torch.cat(latent_z2).numpy()}
+            else return_dict
         )

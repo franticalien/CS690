@@ -152,5 +152,4 @@ scvi/utils/_track.py
 scvi_tools.egg-info/PKG-INFO
 scvi_tools.egg-info/SOURCES.txt
 scvi_tools.egg-info/dependency_links.txt
-scvi_tools.egg-info/requires.txt
 scvi_tools.egg-info/top_level.txt

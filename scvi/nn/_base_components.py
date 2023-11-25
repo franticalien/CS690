@@ -467,9 +467,8 @@ class Encoder1(nn.Module):
         self.n_dims = n_dims
         if self.n_dims is None:
             self.n_dims = [min(128,n_z1 + i*n_delta) for i in range(n_levels)]
-
-        self.qz_nn = [None for i in range(n_levels)]
-        self.qz_nn[0] = FCLayers(
+        self.qz_nn = nn.ModuleList()
+        self.qz_nn.append(FCLayers(
                             n_in=n_input,
                             n_out=n_hidden,
                             n_cat_list=n_cat_list,
@@ -477,11 +476,11 @@ class Encoder1(nn.Module):
                             n_hidden=n_hidden,
                             dropout_rate=dropout_rate,
                             **kwargs,
-                            )
+                            ))
             
           
         for i in range(1,n_levels):
-            self.qz_nn[i] = FCLayers(
+            self.qz_nn.append(FCLayers(
                                 n_in=n_input + n_hidden,
                                 n_out=n_hidden,
                                 n_cat_list=n_cat_list,
@@ -489,11 +488,12 @@ class Encoder1(nn.Module):
                                 n_hidden=n_hidden,
                                 dropout_rate=dropout_rate,
                                 **kwargs,
-                                )
+                                ))
 
-        self.pz_nn = [None for i in range(n_levels)]
+        self.pz_nn = nn.ModuleList()
+        self.pz_nn.append(None)
         if n_levels > 1:
-            self.pz_nn[1] = FCLayers(
+            self.pz_nn.append(FCLayers(
                                 n_in=3*self.n_dims[0],
                                 n_out=n_hidden,
                                 # n_cat_list=n_cat_list,
@@ -501,10 +501,10 @@ class Encoder1(nn.Module):
                                 n_hidden=n_hidden,
                                 dropout_rate=dropout_rate,
                                 **kwargs,
-                                )
+                                ))
             
         for i in range(2,n_levels):
-            self.pz_nn[i] = FCLayers(
+            self.pz_nn.append(FCLayers(
                                 n_in=self.n_dims[i-1] + n_hidden,
                                 n_out=n_hidden,
                                 # n_cat_list=n_cat_list,
@@ -512,7 +512,7 @@ class Encoder1(nn.Module):
                                 n_hidden=n_hidden,
                                 dropout_rate=dropout_rate,
                                 **kwargs,
-                                )
+                                ))
 
         self.fusion_nn = FCLayers(
             n_in=sum(self.n_dims),
@@ -524,15 +524,17 @@ class Encoder1(nn.Module):
             **kwargs,
         )
 
-        self.qz_mean_enc = [None for i in range(n_levels)]
-        self.qz_var_enc = [None for i in range(n_levels)]
-        self.pz_mean_enc = [None for i in range(n_levels)]
-        self.pz_var_enc = [None for i in range(n_levels)]
+        self.qz_mean_enc = nn.ModuleList()
+        self.qz_var_enc = nn.ModuleList()
+        self.pz_mean_enc = nn.ModuleList()
+        self.pz_var_enc = nn.ModuleList()
+        
         for i in range(n_levels):
-            self.qz_mean_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
-            self.pz_mean_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
-            self.qz_var_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
-            self.pz_var_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
+            self.qz_mean_enc.append(nn.Linear(n_hidden, self.n_dims[i]))
+            self.pz_mean_enc.append(nn.Linear(n_hidden, self.n_dims[i]))
+            self.qz_var_enc.append(nn.Linear(n_hidden, self.n_dims[i]))
+            self.pz_var_enc.append(nn.Linear(n_hidden, self.n_dims[i]))
+
 
         self.return_dist = return_dist
 
@@ -543,6 +545,16 @@ class Encoder1(nn.Module):
         self.h = torch.cat([torch.zeros(self.n_dims[0],device = self.device), torch.ones(self.n_dims[0],device = self.device)]).view(1, -1)
 
     def forward(self, x: torch.Tensor, *cat_list: int):
+        # q = self.qz_nn[0](x, *cat_list)
+        # q_m = self.qz_mean_enc[0](q)
+        # q_v = self.var_activation(self.qz_var_enc[0](q)) + self.var_eps
+        # dist = Normal(q_m, q_v.sqrt())
+        # latent = self.z_transformation(dist.rsample())
+
+        # distpz = Normal(torch.zeros_like(q_m),torch.ones_like(q_v))
+        # if self.return_dist:
+        #     return [dist], [distpz], [latent], latent
+        # return q_m, q_v, latent
         r"""The forward computation for a single sample.
 
          #. Encodes the data into latent space using the encoder network
@@ -584,11 +596,11 @@ class Encoder1(nn.Module):
         distqz[0] = Normal(qz_m[0], qz_v[0].sqrt())
         z_smp[0] = self.z_transformation(distqz[0].rsample())
     
-        #pz[0] = self.h*torch.ones((z_smp[0].shape[0],self.h.shape[1]), device = self.device)
-        #pz_m[0], pz_v[0] = torch.chunk(pz[0], 2, dim=1)
-        #distpz[0] = Normal(pz_m[0], pz_v[0].sqrt())
-        distpz[0] = Normal(torch.zeros_like(qz_m[0]),torch.ones_like(qz_v[0]))
-        print(distpz[0])
+        pz[0] = self.h*torch.ones((z_smp[0].shape[0],self.h.shape[1]), device = self.device)
+        pz_m[0], pz_v[0] = torch.chunk(pz[0], 2, dim=1)
+        distpz[0] = Normal(pz_m[0], pz_v[0].sqrt())
+        #distpz[0] = Normal(torch.zeros_like(qz_m[0]),torch.ones_like(qz_v[0]))
+        #print(distpz[0])
         for i in range(1,self.n_levels):
         
             pz_z = torch.cat([pz[i-1],z_smp[i-1]],axis=1)
@@ -612,10 +624,10 @@ class Encoder1(nn.Module):
         #print("--------------")
         if self.return_dist:
             # return distqz1, distqz2, distpz1, distpz2, z1, z2, z
-            return distqz, distpz, z_smp, z_smp[0]
-            #return distqz, distpz, z_smp, z_final
+            #return distqz, distpz, z_smp, z_smp[0]
+            return distqz, distpz, z_smp, z_final
         # return qz1_m, qz1_v, qz2_m, qz2_v, pz1_m, pz1_v, pz2_m, pz2_v, z1, z2, z
-        return qz_m, pz_v, z_smp, z_final
+        return qz_m, qz_v, z_smp, z_final
         
 
 

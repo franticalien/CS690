@@ -518,7 +518,7 @@ class Encoder1(nn.Module):
             n_in=sum(self.n_dims),
             n_out=n_latent,
             # n_cat_list=n_cat_list,
-            n_layers=n_layers+1,
+            n_layers=n_layers,
             n_hidden=n_hidden,
             dropout_rate=dropout_rate,
             **kwargs,

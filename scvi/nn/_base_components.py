@@ -331,16 +331,16 @@ class Encoder1(nn.Module):
 
     def __init__(
         self,
-        n_input: int,
-        n_levels: int = 2,
-        n_dims = None, #list of dimensions of z_i's
-        n_z1: int = 10,
-        n_delta: int = 10,
-        n_latent: int,
         M,
         means,
         highly_variable,
+        n_input: int,
+        n_latent: int,
+        n_levels: int = 2,
+        n_z1: int = 10,
+        n_delta: int = 10,
         n_samples: int=1,
+        n_dims = None, #list of dimensions of z_i's
         # n_output: int,
         n_cat_list: Iterable[int] = None,
         n_layers: int = 1,
@@ -362,74 +362,73 @@ class Encoder1(nn.Module):
         self.n_levels = n_levels
         self.n_dims = n_dims
         if self.n_dims is None:
-            self.nn_dims = [min(128,n_z1 + i*n_delta) for i in range(n_levels)]
+            self.n_dims = [min(128,n_z1 + i*n_delta) for i in range(n_levels)]
 
-        self.qz_nn = []
-        self.qz_nn.append(
-            FCLayers(
-                n_in=n_input,
-                n_out=n_hidden,
-                n_cat_list=n_cat_list,
-                n_layers=n_layers,
-                n_hidden=n_hidden,
-                dropout_rate=dropout_rate,
-                **kwargs,
-                ))  
+        self.qz_nn = [None for i in range(n_levels)]
+        self.qz_nn[0] = FCLayers(
+                            n_in=n_input,
+                            n_out=n_hidden,
+                            n_cat_list=n_cat_list,
+                            n_layers=n_layers,
+                            n_hidden=n_hidden,
+                            dropout_rate=dropout_rate,
+                            **kwargs,
+                            )
+            
           
         for i in range(1,n_levels):
-            self.qz_nn.append(
-                FCLayers(
-                    n_in=n_input + n_hidden,
-                    n_out=n_hidden,
-                    n_cat_list=n_cat_list,
-                    n_layers=n_layers,
-                    n_hidden=n_hidden,
-                    dropout_rate=dropout_rate,
-                    **kwargs,
-                    ))
+            self.qz_nn[i] = FCLayers(
+                                n_in=n_input + n_hidden,
+                                n_out=n_hidden,
+                                n_cat_list=n_cat_list,
+                                n_layers=n_layers,
+                                n_hidden=n_hidden,
+                                dropout_rate=dropout_rate,
+                                **kwargs,
+                                )
 
-        self.pz_nn = [None,]
-        self.pz_nn.append(
-            FCLayers(
-                n_in=3*n_dims[0],
-                n_out=n_hidden,
-                # n_cat_list=n_cat_list,
-                n_layers=n_layers,
-                n_hidden=n_hidden,
-                dropout_rate=dropout_rate,
-                **kwargs,
-                ))  
+        self.pz_nn = [None for i in range(n_levels)]
+        if n_levels > 1:
+            self.pz_nn[1] = FCLayers(
+                                n_in=3*self.n_dims[0],
+                                n_out=n_hidden,
+                                # n_cat_list=n_cat_list,
+                                n_layers=n_layers,
+                                n_hidden=n_hidden,
+                                dropout_rate=dropout_rate,
+                                **kwargs,
+                                )
+            
         for i in range(2,n_levels):
-            self.qz_nn.append(
-                FCLayers(
-                    n_in=n_dims[i-1] + n_hidden,
-                    n_out=n_hidden,
-                    # n_cat_list=n_cat_list,
-                    n_layers=n_layers,
-                    n_hidden=n_hidden,
-                    dropout_rate=dropout_rate,
-                    **kwargs,
-                    ))
+            self.pz_nn[i] = FCLayers(
+                                n_in=self.n_dims[i-1] + n_hidden,
+                                n_out=n_hidden,
+                                # n_cat_list=n_cat_list,
+                                n_layers=n_layers,
+                                n_hidden=n_hidden,
+                                dropout_rate=dropout_rate,
+                                **kwargs,
+                                )
 
         self.fusion_nn = FCLayers(
-            n_in=sum(n_dims),
+            n_in=sum(self.n_dims),
             n_out=n_latent,
             # n_cat_list=n_cat_list,
-            n_layers=n_layers+1,
+            n_layers=n_layers,
             n_hidden=n_hidden,
             dropout_rate=dropout_rate,
             **kwargs,
         )
 
-        self.qz_mean_enc = []
-        self.qz_var_enc = []
-        self.pz_mean_enc = []
-        self.pz_var_enc = []
+        self.qz_mean_enc = [None for i in range(n_levels)]
+        self.qz_var_enc = [None for i in range(n_levels)]
+        self.pz_mean_enc = [None for i in range(n_levels)]
+        self.pz_var_enc = [None for i in range(n_levels)]
         for i in range(n_levels):
-            self.qz_mean_enc.append(nn.Linear(n_hidden, n_dims[i]))
-            self.pz_mean_enc.append(nn.Linear(n_hidden, n_dims[i]))
-            self.qz_var_enc.append(nn.Linear(n_hidden, n_dims[i]))
-            self.pz_var_enc.append(nn.Linear(n_hidden, n_dims[i]))
+            self.qz_mean_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
+            self.pz_mean_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
+            self.qz_var_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
+            self.pz_var_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
 
         self.return_dist = return_dist
 
@@ -437,7 +436,7 @@ class Encoder1(nn.Module):
         self.var_activation = torch.exp if var_activation is None else var_activation
         
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.h = torch.cat([torch.zeros(n_dims[0],device = self.device), torch.ones(n_dims[0],device = self.device)]).view(1, -1)
+        self.h = torch.cat([torch.zeros(self.n_dims[0],device = self.device), torch.ones(self.n_dims[0],device = self.device)]).view(1, -1)
 
     def forward(self, x: torch.Tensor, *cat_list: int):
         r"""The forward computation for a single sample.
@@ -468,42 +467,49 @@ class Encoder1(nn.Module):
         distqz = [None for i in range(self.n_levels)]
         qz_m = [None for i in range(self.n_levels)]
         qz_v = [None for i in range(self.n_levels)]
-        z_smp = [None for in range(self.n_levels)]
+        z_smp = [None for i in range(self.n_levels)]
         pz = [None for i in range(self.n_levels)]
         distpz = [None for i in range(self.n_levels)]
         pz_m = [None for i in range(self.n_levels)]
         pz_v = [None for i in range(self.n_levels)]
         
-        pz[0] = self.h*torch.ones((z1.shape[0],self.h.shape[1]), device = self.device)
-        pz_m[0], pz_v[0] = torch.chunk(pz[0], 2, dim=1)
-        distpz[0] = Normal(pz_m[0], pz_v[0].sqrt() + self.var_eps)
+       
         qz[0] = self.qz_nn[0](x, *cat_list)
         qz_m[0] = self.qz_mean_enc[0](qz[0])
-        qz_v[0] = self.qz_var_enc[0](qz[0])
-        distqz[0] = Normal(qz_m[0], qz_v[0].sqrt() + self.var_eps)
-        z_simp[0] = self.z_transformation(distqz[0].rsample())
-        
+        qz_v[0] = self.var_activation(self.qz_var_enc[0](qz[0])) + self.var_eps
+        distqz[0] = Normal(qz_m[0], qz_v[0].sqrt())
+        z_smp[0] = self.z_transformation(distqz[0].rsample())
+    
+        #pz[0] = self.h*torch.ones((z_smp[0].shape[0],self.h.shape[1]), device = self.device)
+        #pz_m[0], pz_v[0] = torch.chunk(pz[0], 2, dim=1)
+        #distpz[0] = Normal(pz_m[0], pz_v[0].sqrt())
+        distpz[0] = Normal(torch.zeros_like(qz_m[0]),torch.ones_like(qz_v[0]))
+        print(distpz[0])
         for i in range(1,self.n_levels):
-            print(i)
+        
             pz_z = torch.cat([pz[i-1],z_smp[i-1]],axis=1)
             pz[i] = self.pz_nn[i](pz_z)
             pz_m[i] = self.pz_mean_enc[i](pz[i])
-            pz_v[i] = self.pz_var_enc[i](pz[i])
-            distpz[i] = Normal(pz_m[i], pz_v[i].sqrt() + self.var_eps)
+            pz_v[i] = self.var_activation(self.pz_var_enc[i](pz[i])) + self.var_eps
+            distpz[i] = Normal(pz_m[i], pz_v[i].sqrt())
 
             qz_input = torch.cat([x,pz[i]],axis=1)
             qz[i] = self.qz_nn[i](qz_input, *cat_list)
             qz_m[i] = self.qz_mean_enc[i](qz[i])
-            qz_v[i] = self.qz_var_enc[i](qz[i])
-            distqz[i] = Normal(qz_m[i], qz_v[i].sqrt() + self.var_eps)
-            z_simp[i] = self.z_transformation(distqz[i].rsample())
+            qz_v[i] = self.var_activation(self.qz_var_enc[i](qz[i])) + self.var_eps
+            distqz[i] = Normal(qz_m[i], qz_v[i].sqrt())
+            z_smp[i] = self.z_transformation(distqz[i].rsample())
 
         z_cat = torch.cat(z_smp,axis=1)
         z_final = self.fusion_nn(z_cat)
 
+      
+        # print(pz[1])
+        #print("--------------")
         if self.return_dist:
             # return distqz1, distqz2, distpz1, distpz2, z1, z2, z
-            return distqz, distpz, z_smp, z_final
+            return distqz, distpz, z_smp, z_smp[0]
+            #return distqz, distpz, z_smp, z_final
         # return qz1_m, qz1_v, qz2_m, qz2_v, pz1_m, pz1_v, pz2_m, pz2_v, z1, z2, z
         return qz_m, pz_v, z_smp, z_final
         

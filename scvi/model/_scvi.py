@@ -102,6 +102,7 @@ class SCVI(
     def __init__(
         self,
         adata: AnnData,
+        n_dims =  None,
         n_hidden: int = 128,
         n_hvg: int = 5000,
         n_clusters: int = 10,
@@ -141,6 +142,7 @@ class SCVI(
         self.means = None
         self.hkmkb(adata,n_clusters,n_pcs)
         self.module = self._module_cls(
+            n_dims = n_dims,
             n_input=self.summary_stats.n_vars,
             M = self.M,
             means = self.means,
@@ -329,7 +331,7 @@ class SCVI(
         clf.fit_predict(matrix.T)
         print("Clustering Done")
         labels = clf.labels_
-        print(matrix)
+        #print(matrix)
         for i in range(n_clusters):
             matrix_copy = matrix.copy()
             matrix_copy[:,labels!=i] = 0
@@ -340,10 +342,10 @@ class SCVI(
             pca_matrix[:,labels!=i] = 0
             matrix_list.append(pca_matrix)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        print(matrix_list)
+        #print(matrix_list)
         self.means = torch.from_numpy(np.mean(matrix,axis=0)).to(device)
         self.M = torch.tensor(np.concatenate(matrix_list,axis=0)).to(device)
-        print(self.M)
+        #print(self.M)
         '''matrix = np.asarray(adata.X.todense())
         pca = PCA(n_components=n_pcs)
         pca.fit(matrix.copy())

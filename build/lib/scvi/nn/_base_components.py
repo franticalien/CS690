@@ -331,13 +331,16 @@ class Encoder1(nn.Module):
 
     def __init__(
         self,
-        n_input: int,
-        n_z1: int,
-        n_z2: int,
-        n_z: int,
         M,
+        means,
         highly_variable,
+        n_input: int,
+        n_latent: int,
+        n_levels: int = 2,
+        n_z1: int = 10,
+        n_delta: int = 10,
         n_samples: int=1,
+        n_dims = None, #list of dimensions of z_i's
         # n_output: int,
         n_cat_list: Iterable[int] = None,
         n_layers: int = 1,
@@ -351,62 +354,89 @@ class Encoder1(nn.Module):
     ):
         super().__init__()
         self.M = M
+        self.means = means
         self.highly_variable = highly_variable
         self.distribution = distribution
         self.var_eps = var_eps
-        self.z1_encoder = FCLayers(
-            n_in=M.shape[0],
-     #       n_in = np.sum(highly_variable),
-            n_out=n_hidden,
-            n_cat_list=n_cat_list,
-            n_layers=n_layers,
-            n_hidden=n_hidden,
-            dropout_rate=dropout_rate,
-            **kwargs,
-        )
-        self.z2_encoder = FCLayers(
-            n_in=2*n_z2 + n_input,
-            n_out=n_hidden,
+
+        self.n_levels = n_levels
+        self.n_dims = n_dims
+        if self.n_dims is None:
+            self.n_dims = [min(128,n_z1 + i*n_delta) for i in range(n_levels)]
+
+        self.qz_nn = [None for i in range(n_levels)]
+        self.qz_nn[0] = FCLayers(
+                            n_in=n_input,
+                            n_out=n_hidden,
+                            n_cat_list=n_cat_list,
+                            n_layers=n_layers,
+                            n_hidden=n_hidden,
+                            dropout_rate=dropout_rate,
+                            **kwargs,
+                            )
+            
+          
+        for i in range(1,n_levels):
+            self.qz_nn[i] = FCLayers(
+                                n_in=n_input + n_hidden,
+                                n_out=n_hidden,
+                                n_cat_list=n_cat_list,
+                                n_layers=n_layers,
+                                n_hidden=n_hidden,
+                                dropout_rate=dropout_rate,
+                                **kwargs,
+                                )
+
+        self.pz_nn = [None for i in range(n_levels)]
+        if n_levels > 1:
+            self.pz_nn[1] = FCLayers(
+                                n_in=3*self.n_dims[0],
+                                n_out=n_hidden,
+                                # n_cat_list=n_cat_list,
+                                n_layers=n_layers,
+                                n_hidden=n_hidden,
+                                dropout_rate=dropout_rate,
+                                **kwargs,
+                                )
+            
+        for i in range(2,n_levels):
+            self.pz_nn[i] = FCLayers(
+                                n_in=self.n_dims[i-1] + n_hidden,
+                                n_out=n_hidden,
+                                # n_cat_list=n_cat_list,
+                                n_layers=n_layers,
+                                n_hidden=n_hidden,
+                                dropout_rate=dropout_rate,
+                                **kwargs,
+                                )
+
+        self.fusion_nn = FCLayers(
+            n_in=sum(self.n_dims),
+            n_out=n_latent,
             # n_cat_list=n_cat_list,
             n_layers=n_layers,
             n_hidden=n_hidden,
             dropout_rate=dropout_rate,
             **kwargs,
         )
-        self.nn1 = FCLayers(
-            n_in=3*n_z1,
-            n_out=2*n_z2,
-            # n_cat_list=n_cat_list,
-            n_layers=n_layers,
-            n_hidden=n_hidden,
-            dropout_rate=dropout_rate,
-            **kwargs,
-        )
-        self.nn2 = FCLayers(
-            n_in=n_z1+n_z2,
-            n_out=n_z,
-            # n_cat_list=n_cat_list,
-            n_layers=n_layers,
-            n_hidden=n_hidden,
-            dropout_rate=dropout_rate,
-            **kwargs,
-        )
-        self.z1_mean_encoder = nn.Linear(n_hidden, n_z1)
-        self.z2_mean_encoder = nn.Linear(n_hidden, n_z2)
-        self.z1_var_encoder = nn.Linear(n_hidden, n_z1)
-        self.z2_var_encoder = nn.Linear(n_hidden, n_z2)
+
+        self.qz_mean_enc = [None for i in range(n_levels)]
+        self.qz_var_enc = [None for i in range(n_levels)]
+        self.pz_mean_enc = [None for i in range(n_levels)]
+        self.pz_var_enc = [None for i in range(n_levels)]
+        for i in range(n_levels):
+            self.qz_mean_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
+            self.pz_mean_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
+            self.qz_var_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
+            self.pz_var_enc[i] = nn.Linear(n_hidden, self.n_dims[i])
+
         self.return_dist = return_dist
 
-        # if distribution == "ln":
-        #     self.z_transformation = nn.Softmax(dim=-1)
-        # else:
         self.z_transformation = _identity
         self.var_activation = torch.exp if var_activation is None else var_activation
         
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.h = torch.cat([torch.zeros(n_z1,device = self.device), torch.ones(n_z1,device = self.device)]).view(1, -1)
-        # if n_samples > 1:
-        #     self.h = self.h*(torch.ones((n_samples,2*n_z1)))
+        self.h = torch.cat([torch.zeros(self.n_dims[0],device = self.device), torch.ones(self.n_dims[0],device = self.device)]).view(1, -1)
 
     def forward(self, x: torch.Tensor, *cat_list: int):
         r"""The forward computation for a single sample.
@@ -429,51 +459,60 @@ class Encoder1(nn.Module):
 
         """
         # Parameters for latent distribution
-        x_hvg = x[:,self.highly_variable]
-        x_ll = torch.matmul(x_hvg,self.M.T)
-        qz1 = self.z1_encoder(x_ll, *cat_list)
-        qz1_m = self.z1_mean_encoder(qz1)
-        qz1_v = self.var_activation(self.z1_var_encoder(qz1)) + self.var_eps
-        distqz1 = Normal(qz1_m, qz1_v.sqrt())
-        z1 = self.z_transformation(distqz1.rsample())
-        # if n_samples > 1:
-        #     untran_z1 = distz1.rsample((n_samples,))
-        #     z1 = self.z_transformation(untran_z)
-        #print(z1)
-        #print(z1.shape)
-        #print(self.h)
-        #print(self.h.shape)
-        h_hat = self.h*torch.ones((z1.shape[0],self.h.shape[1]), device = self.device)
-        z1_h = torch.cat([z1,h_hat],axis=1)
-        z1_h = self.nn1(z1_h)
-        z1_h_x = torch.cat([z1_h,x],axis=1)
 
-        qz2 = self.z2_encoder(z1_h_x)
-        qz2_m = self.z2_mean_encoder(qz2)
-        qz2_v = self.var_activation(self.z2_var_encoder(qz2)) + self.var_eps
-        distqz2 = Normal(qz2_m, qz2_v.sqrt())
-        z2 = self.z_transformation(distqz2.rsample())
-        #z = torch.cat([z2,z1_h],axis=1)
+        # x_hvg = x[:,self.highly_variable]
+        # x_ll = torch.matmul(x_hvg-self.means,self.M.T)
 
-        pz1_m, pz1_v = torch.chunk(h_hat, 2, dim=1)
-        distpz1 = Normal(pz1_m, pz1_v.sqrt()+self.var_eps)
+        qz = [None for i in range(self.n_levels)]
+        distqz = [None for i in range(self.n_levels)]
+        qz_m = [None for i in range(self.n_levels)]
+        qz_v = [None for i in range(self.n_levels)]
+        z_smp = [None for i in range(self.n_levels)]
+        pz = [None for i in range(self.n_levels)]
+        distpz = [None for i in range(self.n_levels)]
+        pz_m = [None for i in range(self.n_levels)]
+        pz_v = [None for i in range(self.n_levels)]
+        
+       
+        qz[0] = self.qz_nn[0](x, *cat_list)
+        qz_m[0] = self.qz_mean_enc[0](qz[0])
+        qz_v[0] = self.var_activation(self.qz_var_enc[0](qz[0])) + self.var_eps
+        distqz[0] = Normal(qz_m[0], qz_v[0].sqrt())
+        z_smp[0] = self.z_transformation(distqz[0].rsample())
+    
+        #pz[0] = self.h*torch.ones((z_smp[0].shape[0],self.h.shape[1]), device = self.device)
+        #pz_m[0], pz_v[0] = torch.chunk(pz[0], 2, dim=1)
+        #distpz[0] = Normal(pz_m[0], pz_v[0].sqrt())
+        distpz[0] = Normal(torch.zeros_like(qz_m[0]),torch.ones_like(qz_v[0]))
+        print(distpz[0])
+        for i in range(1,self.n_levels):
+        
+            pz_z = torch.cat([pz[i-1],z_smp[i-1]],axis=1)
+            pz[i] = self.pz_nn[i](pz_z)
+            pz_m[i] = self.pz_mean_enc[i](pz[i])
+            pz_v[i] = self.var_activation(self.pz_var_enc[i](pz[i])) + self.var_eps
+            distpz[i] = Normal(pz_m[i], pz_v[i].sqrt())
 
-        pz2_m, pz2_v = torch.chunk(z1_h, 2, dim=1)
-        pz2_v = self.var_activation(pz2_v) + self.var_eps
+            qz_input = torch.cat([x,pz[i]],axis=1)
+            qz[i] = self.qz_nn[i](qz_input, *cat_list)
+            qz_m[i] = self.qz_mean_enc[i](qz[i])
+            qz_v[i] = self.var_activation(self.qz_var_enc[i](qz[i])) + self.var_eps
+            distqz[i] = Normal(qz_m[i], qz_v[i].sqrt())
+            z_smp[i] = self.z_transformation(distqz[i].rsample())
 
-        distpz2 = Normal(pz2_m, pz2_v.sqrt())
+        z_cat = torch.cat(z_smp,axis=1)
+        z_final = self.fusion_nn(z_cat)
 
-        #========
-        z = torch.cat([z1,z2],axis=1)
-        z = self.nn2(z)
-        #======
-
-
+      
+        # print(pz[1])
+        #print("--------------")
         if self.return_dist:
-            #return distqz1, distqz2, distpz1, distpz2, z1, z2, z2
-            return distqz1, distqz2, distpz1, distpz2, z1, z2, z
-        return qz1_m, qz1_v, qz2_m, qz2_v, pz1_m, pz1_v, pz2_m, pz2_v, z1, z2, z
-        #return qz1_m, qz1_v, qz2_m, qz2_v, pz1_m, pz1_v, pz2_m, pz2_v, z1, z2, z2
+            # return distqz1, distqz2, distpz1, distpz2, z1, z2, z
+            return distqz, distpz, z_smp, z_smp[0]
+            #return distqz, distpz, z_smp, z_final
+        # return qz1_m, qz1_v, qz2_m, qz2_v, pz1_m, pz1_v, pz2_m, pz2_v, z1, z2, z
+        return qz_m, pz_v, z_smp, z_final
+        
 
 
 # Decoder

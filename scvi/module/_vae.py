@@ -101,6 +101,7 @@ class VAE(BaseMinifiedModeModuleClass):
         M,
         means,
         highly_variable,
+        n_dims,
         n_batch: int = 0,
         n_labels: int = 0,
         n_hidden: Tunable[int] = 128,
@@ -134,6 +135,7 @@ class VAE(BaseMinifiedModeModuleClass):
         self.dispersion = dispersion
         #self.n_latent = n_latent
         self.n_latent = n_latent
+        self.n_levels = n_levels
         self.M = M
         self.means = means
         self.highly_variable = highly_variable
@@ -225,7 +227,7 @@ class VAE(BaseMinifiedModeModuleClass):
             **_extra_encoder_kwargs,
         )
         # decoder goes from n_latent-dimensional space to n_input-d data
-        n_input_decoder = n_z
+        n_input_decoder = n_latent
         _extra_decoder_kwargs = extra_decoder_kwargs or {}
         self.decoder = DecoderSCVI(
             n_input_decoder,
@@ -352,7 +354,7 @@ class VAE(BaseMinifiedModeModuleClass):
             categorical_input = ()
 
         qz, pz, z_smp, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
-        # qz1, qz2, pz1, pz2, z1, z2, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
+        
         ql = None
         if not self.use_observed_lib_size:
             ql, library_encoded = self.l_encoder(
@@ -369,7 +371,7 @@ class VAE(BaseMinifiedModeModuleClass):
                 )
             else:
                 library = ql.sample((n_samples,))
-        outputs = {"z": z, "z_smp": z_smp, "z": z, "qz": qz, "pz": pz, "ql": ql, "library": library}
+        outputs = {"z": z, "z_smp": z_smp, "qz": qz, "pz": pz, "ql": ql, "library": library}
         return outputs
 
     '''@auto_move_data
@@ -483,8 +485,13 @@ class VAE(BaseMinifiedModeModuleClass):
         """Computes the loss function for the model."""
         x = tensors[REGISTRY_KEYS.X_KEY]
         kl_divergence_z = []
-        for i in range(self.n_latent):
-            kl_divergence.append(kl(inference_outputs["qz"][i], inference_outputs["pz"][i]).sum(dim=-1))
+        kl_local_for_warmup = None
+        for i in range(self.n_levels):
+            kl_divergence_z.append(kl(inference_outputs["qz"][i], inference_outputs["pz"][i]).sum(dim=-1))
+            if kl_local_for_warmup is None:
+                kl_local_for_warmup = kl_divergence_z[i]
+            else:
+                kl_local_for_warmup += kl_divergence_z[i]
 
         if not self.use_observed_lib_size:
             kl_divergence_l = kl(
@@ -493,10 +500,13 @@ class VAE(BaseMinifiedModeModuleClass):
             ).sum(dim=1)
         else:
             kl_divergence_l = torch.tensor(0.0, device=x.device)
-
+        print(inference_outputs["qz"][0].stddev)
+        print(inference_outputs["qz"][0].mean)
+        print(inference_outputs["pz"][0].stddev)
+        print(inference_outputs["pz"][0].mean)
+        kl_local_for_warmup = kl(inference_outputs["qz"][0],inference_outputs["pz"][0]).sum(dim=-1)
         reconst_loss = -generative_outputs["px"].log_prob(x).sum(-1)
 
-        kl_local_for_warmup = sum(kl_divergence_z)
         kl_local_no_warmup = kl_divergence_l
 
         weighted_kl_local = kl_weight * kl_local_for_warmup + kl_local_no_warmup
@@ -505,7 +515,7 @@ class VAE(BaseMinifiedModeModuleClass):
 
         kl_local = {
             "kl_divergence_l": kl_divergence_l,
-            "kl_divergence_z": kl_divergence_z,
+            "kl_divergence_z": kl_local_for_warmup,
         }
         return LossOutput(
             loss=loss, reconstruction_loss=reconst_loss, kl_local=kl_local
@@ -698,7 +708,7 @@ class LDVAE(VAE):
         n_batch: int = 0,
         n_labels: int = 0,
         n_hidden: int = 128,
-        n_latent: int = 10,
+        n_latent: int = 30,
         n_layers_encoder: int = 1,
         dropout_rate: float = 0.1,
         dispersion: str = "gene",

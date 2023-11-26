@@ -171,10 +171,13 @@ class VAE(BaseMinifiedModeModuleClass):
 
         if self.dispersion == "gene":
             self.px_r = torch.nn.Parameter(torch.randn(n_input))
+            self.px_r_gen = torch.nn.Parameter(torch.randn(n_input))
         elif self.dispersion == "gene-batch":
             self.px_r = torch.nn.Parameter(torch.randn(n_input, n_batch))
+            self.px_r_gen = torch.nn.Parameter(torch.randn(n_input, n_batch))
         elif self.dispersion == "gene-label":
             self.px_r = torch.nn.Parameter(torch.randn(n_input, n_labels))
+            self.px_r_gen = torch.nn.Parameter(torch.randn(n_input, n_labels))
         elif self.dispersion == "gene-cell":
             pass
         else:
@@ -309,6 +312,7 @@ class VAE(BaseMinifiedModeModuleClass):
         return input_dict
 
     def _get_generative_input(self, tensors, inference_outputs):
+        genz = inference_outputs["genz"]
         z = inference_outputs["z"]
         library = inference_outputs["library"]
         batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
@@ -329,6 +333,7 @@ class VAE(BaseMinifiedModeModuleClass):
 
         input_dict = {
             "z": z,
+            "genz": genz,
             "library": library,
             "batch_index": batch_index,
             "y": y,
@@ -382,7 +387,7 @@ class VAE(BaseMinifiedModeModuleClass):
         else:
             categorical_input = ()
 
-        qz, pz, z_smp, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
+        qz, pz, z_smp, genz_smp, z, genz = self.z_encoder(encoder_input, batch_index, *categorical_input)
         
         ql = None
         if not self.use_observed_lib_size:
@@ -401,7 +406,7 @@ class VAE(BaseMinifiedModeModuleClass):
             else:
                 library = ql.sample((n_samples,))
 
-        outputs = {"z": z, "z_smp": z_smp, "qz": qz, "pz": pz, "ql": ql, "library": library}
+        outputs = {"z": z, "genz": genz, "z_smp": z_smp, "genz_smp": genz_smp, "qz": qz, "pz": pz, "ql": ql, "library": library}
         return outputs
 
     '''@auto_move_data
@@ -427,6 +432,7 @@ class VAE(BaseMinifiedModeModuleClass):
     def generative(
         self,
         z,
+        genz,
         library,
         batch_index,
         cont_covs=None,
@@ -447,6 +453,15 @@ class VAE(BaseMinifiedModeModuleClass):
         else:
             decoder_input = torch.cat([z, cont_covs], dim=-1)
 
+        if cont_covs is None:
+            decoder_input_gen = genz
+        elif genz.dim() != cont_covs.dim():
+            decoder_input_gen = torch.cat(
+                [genz, cont_covs.unsqueeze(0).expand(genz.size(0), -1, -1)], dim=-1
+            )
+        else:
+            decoder_input_gen = torch.cat([genz, cont_covs], dim=-1)
+
         if cat_covs is not None:
             categorical_input = torch.split(cat_covs, 1, dim=1)
         else:
@@ -466,16 +481,31 @@ class VAE(BaseMinifiedModeModuleClass):
             *categorical_input,
             y,
         )
+
+        px_scale_gen, px_r_gen, px_rate_gen, px_dropout_gen = self.decoder(
+            self.dispersion,
+            decoder_input_gen,
+            size_factor,
+            batch_index,
+            *categorical_input,
+            y,
+        )
+
         if self.dispersion == "gene-label":
             px_r = F.linear(
                 one_hot(y, self.n_labels), self.px_r
             )  # px_r gets transposed - last dimension is nb genes
+            px_r_gen = F.linear(
+                one_hot(y, self.n_labels), self.px_r_gen
+            )  # px_r gets transposed - last dimension is nb genes
         elif self.dispersion == "gene-batch":
             px_r = F.linear(one_hot(batch_index, self.n_batch), self.px_r)
+            px_r_gen = F.linear(one_hot(batch_index, self.n_batch), self.px_r_gen)
         elif self.dispersion == "gene":
             px_r = self.px_r
-
+            px_r_gen = self.px_r_gen
         px_r = torch.exp(px_r)
+        px_r_gen = torch.exp(px_r_gen)
 
         if self.gene_likelihood == "zinb":
             px = ZeroInflatedNegativeBinomial(
@@ -484,10 +514,18 @@ class VAE(BaseMinifiedModeModuleClass):
                 zi_logits=px_dropout,
                 scale=px_scale,
             )
+            px_gen = ZeroInflatedNegativeBinomial(
+                mu=px_rate_gen,
+                theta=px_r_gen,
+                zi_logits=px_dropout_gen,
+                scale=px_scale_gen,
+            )
         elif self.gene_likelihood == "nb":
             px = NegativeBinomial(mu=px_rate, theta=px_r, scale=px_scale)
+            px_gen = NegativeBinomial(mu=px_rate_gen, theta=px_r_gen, scale=px_scale_gen)
         elif self.gene_likelihood == "poisson":
             px = Poisson(px_rate, scale=px_scale)
+            px_gen = Poisson(px_rate_gen, scale=px_scale_gen)
 
         # Priors
         if self.use_observed_lib_size:
@@ -501,6 +539,7 @@ class VAE(BaseMinifiedModeModuleClass):
         # pz = Normal(torch.zeros_like(z), torch.ones_like(z))
         return {
             "px": px,
+            "px_gen": px_gen,
             "pl": pl,
             # "pz": pz,
         }
@@ -530,7 +569,9 @@ class VAE(BaseMinifiedModeModuleClass):
             ).sum(dim=1)
         else:
             kl_divergence_l = torch.tensor(0.0, device=x.device)
-        reconst_loss = -generative_outputs["px"].log_prob(x).sum(-1)
+        # reconst_loss = -generative_outputs["px"].log_prob(x).sum(-1)
+        reconst_loss = -generative_outputs["px_gen"].log_prob(x).sum(-1)
+        # reconst_loss = -generative_outputs["px"].log_prob(x).sum(-1) -generative_outputs["px_gen"].log_prob(x).sum(-1)
 
         kl_local_no_warmup = kl_divergence_l
 

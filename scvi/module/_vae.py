@@ -14,7 +14,7 @@ from scvi.autotune._types import Tunable
 from scvi.data._constants import ADATA_MINIFY_TYPE
 from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBinomial
 from scvi.module.base import BaseMinifiedModeModuleClass, LossOutput, auto_move_data
-from scvi.nn import DecoderSCVI, Encoder, Encoder1, LinearDecoderSCVI, one_hot, Encoder2
+from scvi.nn import DecoderSCVI, Encoder, Encoder1, LinearDecoderSCVI, one_hot
 
 torch.backends.cudnn.benchmark = True
 
@@ -130,7 +130,9 @@ class VAE(BaseMinifiedModeModuleClass):
         var_activation: Tunable[Callable] = None,
         extra_encoder_kwargs: Optional[dict] = None,
         extra_decoder_kwargs: Optional[dict] = None,
+        type_ = "NVAE",
     ):
+        print(type_)
         super().__init__()
         self.dispersion = dispersion
         #self.n_latent = n_latent
@@ -146,6 +148,7 @@ class VAE(BaseMinifiedModeModuleClass):
         self.n_labels = n_labels
         self.latent_distribution = latent_distribution
         self.encode_covariates = encode_covariates
+        self.n_dims = n_dims
 
         self.use_size_factor_key = use_size_factor_key
         self.use_observed_lib_size = use_size_factor_key or use_observed_lib_size
@@ -185,6 +188,10 @@ class VAE(BaseMinifiedModeModuleClass):
 
         # z encoder goes from the n_input-dimensional data to an n_latent-d
         # latent space representation
+        if self.n_dims is None:
+            self.n_dims = [min(128,n_z1 + i*n_delta) for i in range(n_levels)]
+
+
         n_input_encoder = n_input + n_continuous_cov * encode_covariates
         cat_list = [n_batch] + list([] if n_cats_per_cov is None else n_cats_per_cov)
         encoder_cat_list = cat_list if encode_covariates else None
@@ -193,9 +200,7 @@ class VAE(BaseMinifiedModeModuleClass):
             n_input=n_input_encoder,
             n_latent=n_latent,
             n_levels=n_levels,
-            n_dims=n_dims,
-            n_z1=n_z1,
-            n_delta=n_delta,
+            n_dims=self.n_dims,
             M = M,
             means = means,
             highly_variable = highly_variable,
@@ -209,6 +214,7 @@ class VAE(BaseMinifiedModeModuleClass):
             use_layer_norm=use_layer_norm_encoder,
             var_activation=var_activation,
             return_dist=True,
+            type_ = type_,
             **_extra_encoder_kwargs,
         )
 
@@ -387,6 +393,7 @@ class VAE(BaseMinifiedModeModuleClass):
                 )
             else:
                 library = ql.sample((n_samples,))
+
         outputs = {"z": z, "z_smp": z_smp, "qz": qz, "pz": pz, "ql": ql, "library": library}
         return outputs
 

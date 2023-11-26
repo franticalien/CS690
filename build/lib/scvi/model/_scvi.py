@@ -116,10 +116,11 @@ class SCVI(
         dispersion: Literal["gene", "gene-batch", "gene-label", "gene-cell"] = "gene",
         gene_likelihood: Literal["zinb", "nb", "poisson"] = "zinb",
         latent_distribution: Literal["normal", "ln"] = "normal",
+        type_ = "NVAE",
         **model_kwargs,
     ):
         super().__init__(adata)
-
+        print(type_)
         n_cats_per_cov = (
             self.adata_manager.get_state_registry(
                 REGISTRY_KEYS.CAT_COVS_KEY
@@ -164,6 +165,7 @@ class SCVI(
             use_size_factor_key=use_size_factor_key,
             library_log_means=library_log_means,
             library_log_vars=library_log_vars,
+            type_ = type_,
             **model_kwargs,
         )
         self.module.minified_data_type = self.minified_data_type

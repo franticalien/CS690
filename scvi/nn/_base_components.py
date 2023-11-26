@@ -419,6 +419,7 @@ class Encoder1(nn.Module):
             dropout_rate=dropout_rate,
             **kwargs,
         )
+        self.prior_type_ = prior_type_
 
         self.qz_mean_enc = nn.ModuleList()
         self.qz_var_enc = nn.ModuleList()
@@ -442,8 +443,8 @@ class Encoder1(nn.Module):
             **kwargs,
         )
 
-        self.gmm_mean = nn.Parameter(4*torch.rand(n_clusters,n_dims[0])-2)
-        self.gmm_var = nn.Parameter(2*torch.rand(n_clusters,n_dims[0])-1)
+        self.gmm_mean = nn.Parameter(4*torch.rand(n_clusters,self.n_dims[0])-2)
+        self.gmm_var = nn.Parameter(2*torch.rand(n_clusters,self.n_dims[0])-1)
 
 
         self.return_dist = return_dist
@@ -509,6 +510,7 @@ class Encoder1(nn.Module):
             pi = self.pi_trans(self.pi_encoder(qz[0]))
             pz_m[0] = torch.matmul(pi,self.gmm_mean)
             pz_v[0] = self.var_activation(torch.matmul(pi,self.gmm_var)) + self.var_eps
+            pz[0] = torch.cat([pz_m[0],pz_v[0]],axis=1)
         elif self.prior_type_ == "GMM_ARGMAX":
             pi = self.pi_trans(self.pi_encoder(qz[0]))
             max_index = torch.argmax(pi,axis=1)
@@ -517,10 +519,11 @@ class Encoder1(nn.Module):
                result_tensor[i,max_index[i]] = 1
             pz_m[0] = torch.matmul(result_tensor,self.gmm_mean)
             pz_v[0] = self.var_activation(torch.matmul(result_tensor,self.gmm_var)) + self.var_eps
+            pz[0] = torch.cat([pz_m[0],pz_v[0]],axis=1)
         elif self.prior_type_ == "NORMAL":
             pz[0] = self.h*torch.ones((z_smp[0].shape[0],self.h.shape[1]), device = self.device)
             pz_m[0], pz_v[0] = torch.chunk(pz[0], 2, dim=1)
-            distpz[0] = Normal(pz_m[0], pz_v[0].sqrt())
+        distpz[0] = Normal(pz_m[0], pz_v[0].sqrt())
         
         for i in range(1,self.n_levels):
             pz_z = torch.cat([pz[i-1],z_smp[i-1]],axis=1)

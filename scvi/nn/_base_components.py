@@ -337,7 +337,9 @@ class Encoder1(nn.Module):
         n_latent: int,
         n_levels: int = 2,
         n_samples: int=1,
+        n_clusters: int = 1,
         n_dims = None, #list of dimensions of z_i's
+        prior_type_ = "NORMAL",
         # n_output: int,
         n_cat_list: Iterable[int] = None,
         n_layers: int = 1,
@@ -350,7 +352,8 @@ class Encoder1(nn.Module):
         type_ = "NVAE",
         **kwargs,
     ):
-        print(type_)
+        print(n_clusters)
+        self.prior_type_ = prior_type_
         super().__init__()
         self.M = M
         self.means = means
@@ -449,7 +452,19 @@ class Encoder1(nn.Module):
             self.qz_var_enc.append(nn.Linear(n_hidden, self.n_dims[i]))
             self.pz_var_enc.append(nn.Linear(n_hidden, self.n_dims[i]))
 
+        self.pi_trans = nn.Softmax(dim=-1)
+        self.pi_encoder = FCLayers(
+            n_in=n_hidden,
+            n_out=n_clusters,
+            n_cat_list=n_cat_list,
+            n_layers=n_layers+1,
+            n_hidden=n_hidden,
+            dropout_rate=dropout_rate,
+            **kwargs,
+            )
 
+        self.gmm_mean = nn.Parameter(4*torch.rand(n_clusters,self.n_dims[0])-2)
+        self.gmm_var = nn.Parameter(2*torch.rand(n_clusters,self.n_dims[0])-1)
         self.return_dist = return_dist
 
         self.z_transformation = _identity
@@ -503,15 +518,31 @@ class Encoder1(nn.Module):
         pz_m = [None for i in range(self.n_levels)]
         pz_v = [None for i in range(self.n_levels)]
         
-       
+
         qz[0] = self.qz_nn[0](x, *cat_list)
         qz_m[0] = self.qz_mean_enc[0](qz[0])
         qz_v[0] = self.var_activation(self.qz_var_enc[0](qz[0])) + self.var_eps
         distqz[0] = Normal(qz_m[0], qz_v[0].sqrt())
         z_smp[0] = self.z_transformation(distqz[0].rsample())
+
+        if self.prior_type_ == "GMM_WEIGHTED":
+            pi = self.pi_trans(self.pi_encoder(qz[0]))
+            pz_m[0] = torch.matmul(pi,self.gmm_mean)
+            pz_v[0] = self.var_activation(torch.matmul(pi,self.gmm_var)) + self.var_eps
+            pz[0] = torch.cat([pz_m[0],pz_v[0]],axis=1)
+        elif self.prior_type_ == "GMM_ARGMAX":
+            pi = self.pi_trans(self.pi_encoder(qz[0]))
+            max_index = torch.argmax(pi,axis=1)
+            result_tensor = torch.zeros_like(pi)
+            for i in range(len(max_index)):
+               result_tensor[i,max_index[i]] = 1
+            pz_m[0] = torch.matmul(result_tensor,self.gmm_mean)
+            pz_v[0] = self.var_activation(torch.matmul(result_tensor,self.gmm_var)) + self.var_eps
+            pz[0] = torch.cat([pz_m[0],pz_v[0]],axis=1)
+        elif self.prior_type_ == "NORMAL":
+            pz[0] = self.h*torch.ones((z_smp[0].shape[0],self.h.shape[1]), device = self.device)
+            pz_m[0], pz_v[0] = torch.chunk(pz[0], 2, dim=1)
     
-        pz[0] = self.h*torch.ones((z_smp[0].shape[0],self.h.shape[1]), device = self.device)
-        pz_m[0], pz_v[0] = torch.chunk(pz[0], 2, dim=1)
         distpz[0] = Normal(pz_m[0], pz_v[0].sqrt())
         #distpz[0] = Normal(torch.zeros_like(qz_m[0]),torch.ones_like(qz_v[0]))
         #print(distpz[0])
@@ -535,7 +566,7 @@ class Encoder1(nn.Module):
         z_cat = torch.cat(z_smp,axis=1)
         if self.type_ == "LVAE":
             z_final = self.fusion_nn(z_smp[-1])
-        elif self.type == "NVAE":
+        elif self.type_ == "NVAE":
             z_final = self.fusion_nn(z_cat)
 
         

@@ -102,6 +102,8 @@ class VAE(BaseMinifiedModeModuleClass):
         means,
         highly_variable,
         n_dims,
+        prior_type_,
+        n_clusters,
         n_batch: int = 0,
         n_labels: int = 0,
         n_hidden: Tunable[int] = 128,
@@ -132,7 +134,6 @@ class VAE(BaseMinifiedModeModuleClass):
         extra_decoder_kwargs: Optional[dict] = None,
         type_ = "NVAE",
     ):
-        print(type_)
         super().__init__()
         self.dispersion = dispersion
         #self.n_latent = n_latent
@@ -203,6 +204,8 @@ class VAE(BaseMinifiedModeModuleClass):
             n_dims=self.n_dims,
             M = M,
             means = means,
+            prior_type_=prior_type_,
+            n_clusters = n_clusters,
             highly_variable = highly_variable,
             n_cat_list=encoder_cat_list,
             n_layers=n_layers,

@@ -338,7 +338,7 @@ class Encoder1(nn.Module):
         n_levels: int = 2,
         n_z1: int = 10,
         n_delta: int = 10,
-        n_clusters: int,
+        n_clusters: int = 1,
         n_samples: int=1,
         n_dims = None, #list of dimensions of z_i's
         prior_type_ = "NORMAL",

@@ -14,7 +14,7 @@ from scvi.autotune._types import Tunable
 from scvi.data._constants import ADATA_MINIFY_TYPE
 from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBinomial
 from scvi.module.base import BaseMinifiedModeModuleClass, LossOutput, auto_move_data
-from scvi.nn import DecoderSCVI, Encoder, Encoder1, LinearDecoderSCVI, one_hot, Encoder2
+from scvi.nn import DecoderSCVI, Encoder, Encoder1, LinearDecoderSCVI, one_hot
 
 torch.backends.cudnn.benchmark = True
 
@@ -103,6 +103,7 @@ class VAE(BaseMinifiedModeModuleClass):
         highly_variable,
         n_dims,
         prior_type_,
+        n_clusters,
         n_batch: int = 0,
         n_labels: int = 0,
         n_hidden: Tunable[int] = 128,

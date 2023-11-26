@@ -106,6 +106,7 @@ class VAE(BaseMinifiedModeModuleClass):
         n_clusters,
         pca_M = None,
         pca_means = None,
+        post_weight = 1,
         n_batch: int = 0,
         n_labels: int = 0,
         n_hidden: Tunable[int] = 128,
@@ -141,6 +142,7 @@ class VAE(BaseMinifiedModeModuleClass):
         #self.n_latent = n_latent
         self.n_latent = n_latent
         self.n_levels = n_levels
+        self.post_weight = post_weight
         self.pca_M = pca_M
         self.pca_means = pca_means
         self.highly_variable = highly_variable
@@ -570,8 +572,8 @@ class VAE(BaseMinifiedModeModuleClass):
         else:
             kl_divergence_l = torch.tensor(0.0, device=x.device)
         # reconst_loss = -generative_outputs["px"].log_prob(x).sum(-1)
-        reconst_loss = -generative_outputs["px_gen"].log_prob(x).sum(-1)
-        # reconst_loss = -generative_outputs["px"].log_prob(x).sum(-1) -generative_outputs["px_gen"].log_prob(x).sum(-1)
+        #reconst_loss = -generative_outputs["px_gen"].log_prob(x).sum(-1)
+        reconst_loss = -self.post_weight*generative_outputs["px"].log_prob(x).sum(-1) -(1 - self.post_weight)*generative_outputs["px_gen"].log_prob(x).sum(-1)
 
         kl_local_no_warmup = kl_divergence_l
 

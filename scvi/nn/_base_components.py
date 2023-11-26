@@ -376,7 +376,7 @@ class Encoder1(nn.Module):
         self.pz_input_dims = [None] + ([3*n_dims[0]] if n_levels > 1 else []) + [n_dims[i-1] + n_hidden for i in range(2,n_levels)]
         self.fusion_input_dims = None
         if self.type_=="LVAE":
-            self.qz_input_dims += [n_hidden for i in range(1,n_levels)]
+            self.qz_input_dims += [self.n_dims[i-1] for i in range(1,n_levels)]
             self.fusion_input_dims = self.n_dims[-1]
         elif self.type_=="NVAE":
             self.qz_input_dims += [n_input + n_hidden for i in range(1,n_levels)]
@@ -551,7 +551,7 @@ class Encoder1(nn.Module):
             if self.type_ == "NVAE":
                 qz_input = torch.cat([x,pz[i]],axis=1)
             elif self.type_ == "LVAE":
-                qz_input = pz[i]
+                qz_input = z_smp[i-1]
             elif self.type_ == "NVAE_PCA":
                 if self.x_conv[i] is not None:
                     qz_input = self.x_conv[i](x)
@@ -570,7 +570,7 @@ class Encoder1(nn.Module):
         elif self.type_ == "NVAE" or self.type_ == "NVAE_PCA":
             z_final = self.fusion_nn(z_cat) 
 
-        pz_smp = [None for i in range(n_levels)]
+        pz_smp = [None for i in range(self.n_levels)]
         pz_smp[0] = z_smp[0]
         #forward pass (without encoders):
         for i in range(1,self.n_levels):

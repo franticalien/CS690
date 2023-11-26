@@ -104,6 +104,7 @@ class SCVI(
         adata: AnnData,
         n_dims =  None,
         conv_dims = None,
+        post_weight = 1,
         pca_max_dim: int = 200,
         n_hidden: int = 128,
         n_hvg: int = 5000,
@@ -157,6 +158,7 @@ class SCVI(
             pca_M = self.pca_M,
             pca_means = self.pca_means,
             pca_max_dim = pca_max_dim,
+            post_weight= post_weight,
             highly_variable = self.highly_variable,
             n_batch=n_batch,
             n_labels=self.summary_stats.n_labels,
@@ -183,7 +185,9 @@ class SCVI(
         self.module.minified_data_type = self.minified_data_type
         self._model_summary_string = (
             "SCVI Model with the following params: \nn_hidden: {}, n_latent: {}, n_levels: {},  n_layers: {}, dropout_rate: "
-            "{}, dispersion: {}, gene_likelihood: {}, latent_distribution: {}"
+            "{}, dispersion: {}, gene_likelihood: {}, latent_distribution: {}, pca_max_dim: {}, prior_type_: {}, type_: {}, "
+            "n_prior_clusters: {}, n_pca_clusters: {},\n"
+            "conv_dims: {},\n n_dims: {}"
         ).format(
             n_hidden,
             n_latent,
@@ -193,6 +197,13 @@ class SCVI(
             dispersion,
             gene_likelihood,
             latent_distribution,
+            pca_max_dim,
+            prior_type_,
+            type_,
+            n_prior_clusters,
+            n_clusters,
+            self.conv_dims,
+            self.module.n_dims,
         )
         self.init_params_ = self._get_init_params(locals())
 

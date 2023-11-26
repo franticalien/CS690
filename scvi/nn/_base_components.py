@@ -569,13 +569,31 @@ class Encoder1(nn.Module):
             z_final = self.fusion_nn(z_smp[-1])
         elif self.type_ == "NVAE" or self.type_ == "NVAE_PCA":
             z_final = self.fusion_nn(z_cat) 
+
+        pz_smp = [None for i in range(n_levels)]
+        pz_smp[0] = z_smp[0]
+        #forward pass (without encoders):
+        for i in range(1,self.n_levels):
+            pz_z = torch.cat([pz[i-1],pz_smp[i-1]],axis=1)
+            pz[i] = self.pz_nn[i](pz_z)
+            pz_m[i] = self.pz_mean_enc[i](pz[i])
+            pz_v[i] = self.var_activation(self.pz_var_enc[i](pz[i])) + self.var_eps
+            distpz[i] = Normal(pz_m[i], pz_v[i].sqrt())
+            pz_smp[i] = self.z_transformation(distpz[i].rsample())
+
+        genz_cat = torch.cat(pz_smp,axis=1)
+        if self.type_ == "LVAE":
+            genz_final = self.fusion_nn(pz_smp[-1])
+        elif self.type_ == "NVAE" or self.type_ == "NVAE_PCA":
+            genz_final = self.fusion_nn(genz_cat) 
+
         
         # print(pz[1])
         #print("--------------")
         if self.return_dist:
             # return distqz1, distqz2, distpz1, distpz2, z1, z2, z
             #return distqz, distpz, z_smp, z_smp[0]
-            return distqz, distpz, z_smp.copy(), z_final
+            return distqz, distpz, z_smp.copy(), pz_smp.copy(), z_final, genz_final
         # return qz1_m, qz1_v, qz2_m, qz2_v, pz1_m, pz1_v, pz2_m, pz2_v, z1, z2, z
         return qz_m, qz_v, z_smp.copy(), z_final
         

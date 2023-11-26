@@ -292,111 +292,6 @@ class Encoder(nn.Module):
             return dist, latent
         return q_m, q_v, latent
 
-class Encoder2(nn.Module):
-    """Encode data of ``n_input`` dimensions into a latent space of ``n_output`` dimensions.
-
-    Uses a fully-connected neural network of ``n_hidden`` layers.
-
-    Parameters
-    ----------
-    n_input
-        The dimensionality of the input (data space)
-    n_output
-        The dimensionality of the output (latent space)
-    n_cat_list
-        A list containing the number of categories
-        for each category of interest. Each category will be
-        included using a one-hot encoding
-    n_layers
-        The number of fully-connected hidden layers
-    n_hidden
-        The number of nodes per hidden layer
-    dropout_rate
-        Dropout rate to apply to each of the hidden layers
-    distribution
-        Distribution of z
-    var_eps
-        Minimum value for the variance;
-        used for numerical stability
-    var_activation
-        Callable used to ensure positivity of the variance.
-        Defaults to :meth:`torch.exp`.
-    return_dist
-        Return directly the distribution of z instead of its parameters.
-    **kwargs
-        Keyword args for :class:`~scvi.nn.FCLayers`
-    """
-
-    def __init__(
-        self,
-        n_input: int,
-        n_output: int,
-        n_cat_list: Iterable[int] = None,
-        n_layers: int = 1,
-        n_hidden: int = 128,
-        dropout_rate: float = 0.1,
-        distribution: str = "normal",
-        var_eps: float = 1e-4,
-        var_activation: Optional[Callable] = None,
-        return_dist: bool = False,
-        **kwargs,
-    ):
-        super().__init__()
-
-        self.distribution = distribution
-        self.var_eps = var_eps
-        self.encoder = FCLayers(
-            n_in=n_input,
-            n_out=n_hidden,
-            n_cat_list=n_cat_list,
-            n_layers=n_layers,
-            n_hidden=n_hidden,
-            dropout_rate=dropout_rate,
-            **kwargs,
-        )
-        self.mean_encoder = nn.Linear(n_hidden, n_output)
-        self.var_encoder = nn.Linear(n_hidden, n_output)
-        self.return_dist = return_dist
-
-        if distribution == "ln":
-            self.z_transformation = nn.Softmax(dim=-1)
-        else:
-            self.z_transformation = _identity
-        self.var_activation = torch.exp if var_activation is None else var_activation
-
-    def forward(self, x: torch.Tensor, *cat_list: int):
-        r"""The forward computation for a single sample.
-
-         #. Encodes the data into latent space using the encoder network
-         #. Generates a mean \\( q_m \\) and variance \\( q_v \\)
-         #. Samples a new value from an i.i.d. multivariate normal \\( \\sim Ne(q_m, \\mathbf{I}q_v) \\)
-
-        Parameters
-        ----------
-        x
-            tensor with shape (n_input,)
-        cat_list
-            list of category membership(s) for this sample
-
-        Returns
-        -------
-        3-tuple of :py:class:`torch.Tensor`
-            tensors of shape ``(n_latent,)`` for mean and var, and sample
-
-        """
-        # Parameters for latent distribution
-        q = self.encoder(x, *cat_list)
-        q_m = self.mean_encoder(q)
-        q_v = self.var_activation(self.var_encoder(q)) + self.var_eps
-        dist = Normal(q_m, q_v.sqrt())
-        latent = self.z_transformation(dist.rsample())
-
-        distpz = Normal(torch.zeros_like(q_m[0]),torch.ones_like(q_v[0]))
-        if self.return_dist:
-            return [dist], [distpz], [latent], latent
-        return q_m, q_v, latent
-
-
 # Encoder
 class Encoder1(nn.Module):
     """Encode data of ``n_input`` dimensions into a latent space of ``n_output`` dimensions.
@@ -443,9 +338,10 @@ class Encoder1(nn.Module):
         n_levels: int = 2,
         n_z1: int = 10,
         n_delta: int = 10,
+        n_clusters: int,
         n_samples: int=1,
         n_dims = None, #list of dimensions of z_i's
-        # n_output: int,
+        prior_type_ = "NORMAL",
         n_cat_list: Iterable[int] = None,
         n_layers: int = 1,
         n_hidden: int = 128,
@@ -535,6 +431,20 @@ class Encoder1(nn.Module):
             self.qz_var_enc.append(nn.Linear(n_hidden, self.n_dims[i]))
             self.pz_var_enc.append(nn.Linear(n_hidden, self.n_dims[i]))
 
+        self.pi_trans = nn.Softmax(dim=-1)
+        self.pi_encoder = FCLayers(
+            n_in=n_hidden,
+            n_out=n_clusters,
+            n_cat_list=n_cat_list,
+            n_layers=n_layers+1,
+            n_hidden=n_hidden,
+            dropout_rate=dropout_rate,
+            **kwargs,
+        )
+
+        self.gmm_mean = nn.Parameter(4*torch.rand(n_clusters,n_dims[0])-2)
+        self.gmm_var = nn.Parameter(2*torch.rand(n_clusters,n_dims[0])-1)
+
 
         self.return_dist = return_dist
 
@@ -588,21 +498,31 @@ class Encoder1(nn.Module):
         distpz = [None for i in range(self.n_levels)]
         pz_m = [None for i in range(self.n_levels)]
         pz_v = [None for i in range(self.n_levels)]
-        
        
         qz[0] = self.qz_nn[0](x, *cat_list)
         qz_m[0] = self.qz_mean_enc[0](qz[0])
         qz_v[0] = self.var_activation(self.qz_var_enc[0](qz[0])) + self.var_eps
         distqz[0] = Normal(qz_m[0], qz_v[0].sqrt())
         z_smp[0] = self.z_transformation(distqz[0].rsample())
-    
-        pz[0] = self.h*torch.ones((z_smp[0].shape[0],self.h.shape[1]), device = self.device)
-        pz_m[0], pz_v[0] = torch.chunk(pz[0], 2, dim=1)
-        distpz[0] = Normal(pz_m[0], pz_v[0].sqrt())
-        #distpz[0] = Normal(torch.zeros_like(qz_m[0]),torch.ones_like(qz_v[0]))
-        #print(distpz[0])
-        for i in range(1,self.n_levels):
+
+        if self.prior_type_ == "GMM_WEIGHTED":
+            pi = self.pi_trans(self.pi_encoder(qz[0]))
+            pz_m[0] = torch.matmul(pi,self.gmm_mean)
+            pz_v[0] = self.var_activation(torch.matmul(pi,self.gmm_var)) + self.var_eps
+        elif self.prior_type_ == "GMM_ARGMAX":
+            pi = self.pi_trans(self.pi_encoder(qz[0]))
+            max_index = torch.argmax(pi,axis=1)
+            result_tensor = torch.zeros_like(pi)
+            for i in range(len(max_index)):
+               result_tensor[i,max_index[i]] = 1
+            pz_m[0] = torch.matmul(result_tensor,self.gmm_mean)
+            pz_v[0] = self.var_activation(torch.matmul(result_tensor,self.gmm_var)) + self.var_eps
+        elif self.prior_type_ == "NORMAL":
+            pz[0] = self.h*torch.ones((z_smp[0].shape[0],self.h.shape[1]), device = self.device)
+            pz_m[0], pz_v[0] = torch.chunk(pz[0], 2, dim=1)
+            distpz[0] = Normal(pz_m[0], pz_v[0].sqrt())
         
+        for i in range(1,self.n_levels):
             pz_z = torch.cat([pz[i-1],z_smp[i-1]],axis=1)
             pz[i] = self.pz_nn[i](pz_z)
             pz_m[i] = self.pz_mean_enc[i](pz[i])

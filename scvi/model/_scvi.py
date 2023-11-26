@@ -182,7 +182,9 @@ class SCVI(
         self.module.minified_data_type = self.minified_data_type
         self._model_summary_string = (
             "SCVI Model with the following params: \nn_hidden: {}, n_latent: {}, n_levels: {},  n_layers: {}, dropout_rate: "
-            "{}, dispersion: {}, gene_likelihood: {}, latent_distribution: {}"
+            "{}, dispersion: {}, gene_likelihood: {}, latent_distribution: {}, pca_max_dim: {}, prior_type_: {}, type_: {}, "
+            "n_prior_clusters: {}, n_pca_clusters: {},\n"
+            "conv_dims: {},\n n_dims: {}"
         ).format(
             n_hidden,
             n_latent,
@@ -192,6 +194,11 @@ class SCVI(
             dispersion,
             gene_likelihood,
             latent_distribution,
+            pca_max_dim,
+            prior_type_,
+            type_,
+            self.conv_dims,
+            self.module.n_dims,
         )
         self.init_params_ = self._get_init_params(locals())
 

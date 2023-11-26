@@ -333,9 +333,6 @@ class Encoder1(nn.Module):
         M,
         means,
         highly_variable,
-        n_first: int = 100,
-        n_last,
-        conv_dims = None,
         n_input: int,
         n_latent: int,
         n_levels: int = 2,
@@ -442,6 +439,7 @@ class Encoder1(nn.Module):
                                 **kwargs,
                                 ))
 
+       
 
         self.qz_mean_enc = nn.ModuleList()
         self.qz_var_enc = nn.ModuleList()
@@ -453,28 +451,6 @@ class Encoder1(nn.Module):
             self.pz_mean_enc.append(nn.Linear(n_hidden, self.n_dims[i]))
             self.qz_var_enc.append(nn.Linear(n_hidden, self.n_dims[i]))
             self.pz_var_enc.append(nn.Linear(n_hidden, self.n_dims[i]))
-
-        self.conv_dims = None
-        if n_levels > 1:
-            if conv_dims is None:
-                conv_dims = [(n_last*(n_levels - i - 1) + n_first*i)//(n_levels - 1) for i in range(n_levels)]
-            else:
-                self.conv_dims = conv_dims
-
-
-        self.x_conv = nn.ModuleList()
-        self.x_conv.append(None)
-        for i in range(2,n_levels):
-            self.x_conv.append(FCLayers(
-                                n_in=self.n_dims[i-1] + n_hidden,
-                                n_out=n_hidden,
-                                # n_cat_list=n_cat_list,
-                                n_layers=n_layers,
-                                n_hidden=n_hidden,
-                                dropout_rate=dropout_rate,
-                                **kwargs,
-                                ))
-
 
         self.pi_trans = nn.Softmax(dim=-1)
         self.pi_encoder = FCLayers(

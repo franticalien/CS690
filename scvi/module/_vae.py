@@ -98,14 +98,14 @@ class VAE(BaseMinifiedModeModuleClass):
     def __init__(
         self,
         n_input: int,
-        pca_M,
-        pca_means,
         highly_variable,
         pca_max_dim,
         n_dims,
         conv_dims,
         prior_type_,
         n_clusters,
+        pca_M = None,
+        pca_means = None,
         n_batch: int = 0,
         n_labels: int = 0,
         n_hidden: Tunable[int] = 128,
@@ -141,8 +141,8 @@ class VAE(BaseMinifiedModeModuleClass):
         #self.n_latent = n_latent
         self.n_latent = n_latent
         self.n_levels = n_levels
-        self.M = M
-        self.means = means
+        self.pca_M = pca_M
+        self.pca_means = pca_means
         self.highly_variable = highly_variable
         self.log_variational = log_variational
         self.gene_likelihood = gene_likelihood

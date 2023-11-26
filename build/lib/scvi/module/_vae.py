@@ -98,10 +98,14 @@ class VAE(BaseMinifiedModeModuleClass):
     def __init__(
         self,
         n_input: int,
-        M,
-        means,
         highly_variable,
+        pca_max_dim,
         n_dims,
+        conv_dims,
+        prior_type_,
+        n_clusters,
+        pca_M = None,
+        pca_means = None,
         n_batch: int = 0,
         n_labels: int = 0,
         n_hidden: Tunable[int] = 128,
@@ -132,14 +136,13 @@ class VAE(BaseMinifiedModeModuleClass):
         extra_decoder_kwargs: Optional[dict] = None,
         type_ = "NVAE",
     ):
-        print(type_)
         super().__init__()
         self.dispersion = dispersion
         #self.n_latent = n_latent
         self.n_latent = n_latent
         self.n_levels = n_levels
-        self.M = M
-        self.means = means
+        self.pca_M = pca_M
+        self.pca_means = pca_means
         self.highly_variable = highly_variable
         self.log_variational = log_variational
         self.gene_likelihood = gene_likelihood
@@ -201,8 +204,12 @@ class VAE(BaseMinifiedModeModuleClass):
             n_latent=n_latent,
             n_levels=n_levels,
             n_dims=self.n_dims,
-            M = M,
-            means = means,
+            conv_dims=conv_dims,
+            pca_M = pca_M,
+            pca_means = pca_means,
+            pca_max_dim=pca_max_dim,
+            prior_type_=prior_type_,
+            n_clusters = n_clusters,
             highly_variable = highly_variable,
             n_cat_list=encoder_cat_list,
             n_layers=n_layers,

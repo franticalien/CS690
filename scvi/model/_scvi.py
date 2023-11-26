@@ -148,10 +148,11 @@ class SCVI(
         self.pca_means = None
         self.n_levels = n_levels
         self.conv_dims = conv_dims
-        self.hkmkb_pro(adata,n_clusters,n_first,n_levels)
+        if type_ == "NVAE" or type_ == "NVAE_PCA":
+            self.hkmkb_pro(adata,n_clusters,n_first,n_levels)
         self.module = self._module_cls(
             n_dims = n_dims,
-            conv_dims = conv_dims,
+            conv_dims = self.conv_dims,
             n_input=self.summary_stats.n_vars,
             pca_M = self.pca_M,
             pca_means = self.pca_means,
@@ -407,11 +408,15 @@ class SCVI(
                 pca_matrix[:,labels!=i] = 0
                 matrix_list.append(pca_matrix)
 
-            mean = torch.from_numpy(np.mean(matrix,axis=0))
-            M = torch.tensor(np.concatenate(matrix_list,axis=0))
+            mean = np.mean(matrix,axis=0)
+            M = np.concatenate(matrix_list,axis=0)
+            matrix = (matrix - mean) @ M.T
+
+            mean = torch.from_numpy(mean)
+            M = torch.tensor(M)
+
             pca_means.append(mean)
             pca_M.append(M)
-            matrix = torch.matmul(matrix - mean,M.T)
             print("Done")
         self.pca_M = pca_M
         self.pca_means = pca_means

@@ -360,14 +360,15 @@ class Encoder1(nn.Module):
         print(prior_type_)
         print(n_dims)
         print(conv_dims)
-        self.M = M
-        self.means = means
+        self.pca_M = pca_M
+        self.pca_means = pca_means
         self.highly_variable = highly_variable
         self.distribution = distribution
         self.var_eps = var_eps
         self.type_ = type_
         self.n_levels = n_levels
         self.n_dims = n_dims
+        self.conv_dims = conv_dims
         self.qz_nn = nn.ModuleList()
         self.pz_nn = nn.ModuleList()
 
@@ -378,10 +379,10 @@ class Encoder1(nn.Module):
             self.qz_input_dims += [n_hidden for i in range(1,n_levels)]
             self.fusion_input_dims = self.n_dims[-1]
         elif self.type_=="NVAE":
-            self.qz_input_dims += [n_hidden + n_hidden for i in range(1,n_levels)]
+            self.qz_input_dims += [n_input + n_hidden for i in range(1,n_levels)]
             self.fusion_input_dims = sum(self.n_dims)
         elif self.type_=="NVAE_PCA":
-            self.qz_type += [conv_dims[i] for i in range(1,n_levels)]
+            self.qz_input_dims += [self.conv_dims[i] for i in range(1,n_levels)]
             self.fusion_input_dims = sum(self.n_dims)
 
         for i in range(n_levels):
@@ -432,12 +433,12 @@ class Encoder1(nn.Module):
         if self.type_=="NVAE_PCA":
             self.x_conv.append(None)
             for i in range(1,n_levels):
-                if conv_dims[i] > pca_max_dim:
+                if conv_dims[i] >= pca_max_dim:
                     self.x_conv.append(None)
                     continue
                 self.x_conv.append(FCLayers(
-                                    # n_in=conv_dims[i-1],
-                                    n_in=n_input,
+                                    n_in=conv_dims[i-1],
+                                    #n_in=n_input,
                                     n_out=conv_dims[i],
                                     # n_cat_list=n_cat_list,
                                     n_layers=n_layers,
@@ -566,15 +567,15 @@ class Encoder1(nn.Module):
         z_cat = torch.cat(z_smp,axis=1)
         if self.type_ == "LVAE":
             z_final = self.fusion_nn(z_smp[-1])
-        elif self.type_ == "NVAE":
-            z_final = self.fusion_nn(z_cat)
+        elif self.type_ == "NVAE" or self.type_ == "NVAE_PCA":
+            z_final = self.fusion_nn(z_cat) 
         
         # print(pz[1])
         #print("--------------")
         if self.return_dist:
             # return distqz1, distqz2, distpz1, distpz2, z1, z2, z
             #return distqz, distpz, z_smp, z_smp[0]
-            return distqz, distpz, z_smp, z_final
+            return distqz, distpz, z_smp.copy(), z_final
         # return qz1_m, qz1_v, qz2_m, qz2_v, pz1_m, pz1_v, pz2_m, pz2_v, z1, z2, z
         return qz_m, qz_v, z_smp.copy(), z_final
         

@@ -103,14 +103,19 @@ class SCVI(
         self,
         adata: AnnData,
         n_dims =  None,
+        conv_dims = None,
+        pca_max_dim: int = 200,
         n_hidden: int = 128,
         n_hvg: int = 5000,
         n_clusters: int = 10,
+        n_prior_clusters: int = 2,
         n_pcs: int = 50,
         n_z1: int = 10,
         n_delta: int= 10,
         n_levels: int = 2,
         n_latent: int = 30,
+        prior_type_ = "NORMAL",
+        n_first: int = 500,
         n_layers: int = 1,
         dropout_rate: float = 0.1,
         dispersion: Literal["gene", "gene-batch", "gene-label", "gene-cell"] = "gene",
@@ -139,14 +144,19 @@ class SCVI(
             )
         #sc.pp.highly_variable_genes(adata, n_top_genes=n_hvg, flavor="cell_ranger", batch_key="batch",subset = False)
         self.highly_variable = adata.var["highly_variable"]
-        self.M = None # n_pcs*n_clusters X n_genes
-        self.means = None
-        self.hkmkb(adata,n_clusters,n_pcs)
+        self.pca_M = None # n_pcs*n_clusters X n_genes
+        self.pca_means = None
+        self.n_levels = n_levels
+        self.conv_dims = conv_dims
+        if type_ == "NVAE" or type_ == "NVAE_PCA":
+            self.hkmkb_pro(adata,n_clusters,n_first,n_levels)
         self.module = self._module_cls(
             n_dims = n_dims,
+            conv_dims = self.conv_dims,
             n_input=self.summary_stats.n_vars,
-            M = self.M,
-            means = self.means,
+            pca_M = self.pca_M,
+            pca_means = self.pca_means,
+            pca_max_dim = pca_max_dim,
             highly_variable = self.highly_variable,
             n_batch=n_batch,
             n_labels=self.summary_stats.n_labels,
@@ -155,6 +165,8 @@ class SCVI(
             n_hidden=n_hidden,
             n_levels=n_levels,
             n_latent=n_latent,
+            prior_type_=prior_type_,
+            n_clusters=n_prior_clusters,
             n_z1 = n_z1,
             n_delta=n_delta,
             n_layers=n_layers,
@@ -354,6 +366,58 @@ class SCVI(
         #tmp = pca.fit_transform(matrix.copy())
         self.M = pca
         print(self.M.transform(matrix.copy()))'''
+
+    def hkmkb_pro(
+        self,
+        adata: AnnData,
+        n_clusters: int,
+        n_first,
+        n_levels: int,
+    ):
+
+        n_last = np.sum(self.highly_variable)
+
+        if n_levels > 1 and self.conv_dims is None:
+            self.conv_dims = [(n_last*(n_levels - i - 1) + n_first*i)//(n_levels - 1) for i in range(n_levels)]
+        matrix = np.asarray(adata.X)[:,self.highly_variable]
+        print(f"conv_dims = {self.conv_dims}")
+
+        pca_M, pca_means = [None,], [None,]
+
+        for j in range(1,n_levels):
+            print(f"Clustering + PCA {j}")
+            clf = KMeansConstrained(n_clusters=n_clusters, size_min=self.conv_dims[j-1]//n_clusters, random_state=0)
+            clf.fit_predict(matrix.T)
+            labels = clf.labels_
+            matrix_list = []
+            pca_dims = [(self.conv_dims[j] // n_clusters) + (i < self.conv_dims[j] % n_clusters) for i in range(n_clusters)]
+            for i in range(n_clusters):
+                matrix_copy = matrix.copy()
+                matrix_copy[:,labels!=i] = 0
+                # print(matrix_copy)
+                pca = PCA(n_components=pca_dims[i])
+                pca.fit(matrix_copy)
+                pca_matrix = pca.components_
+                pca_matrix[:,labels!=i] = 0
+                matrix_list.append(pca_matrix)
+
+            mean = np.mean(matrix,axis=0)
+            M = np.concatenate(matrix_list,axis=0)
+            matrix = (matrix - mean) @ M.T
+
+            mean = torch.from_numpy(mean)
+            M = torch.tensor(M)
+
+            pca_means.append(mean)
+            pca_M.append(M)
+            print("Done")
+        self.pca_M = pca_M
+        self.pca_means = pca_means
+
+
+        # [(n // k) + (i < n % k) for i in range(k)]
+
+
 
 
 

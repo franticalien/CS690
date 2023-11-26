@@ -375,19 +375,21 @@ class SCVI(
     ):
 
         n_last = np.sum(self.highly_variable)
+
         if n_levels > 1 and self.conv_dims is None:
-            conv_dims = [(n_last*(n_levels - i - 1) + n_first*i)//(n_levels - 1) for i in range(n_levels)]
+            self.conv_dims = [(n_last*(n_levels - i - 1) + n_first*i)//(n_levels - 1) for i in range(n_levels)]
         matrix = np.asarray(adata.X)[:,self.highly_variable]
+        print(f"conv_dims = {self.conv_dims}")
 
         pca_M, pca_means = [None,], [None,]
 
         for j in range(1,n_levels):
             print(f"Clustering + PCA {j}")
-            clf = KMeansConstrained(n_clusters=n_clusters, size_min=conv_dims[j-1]//n_clusters, random_state=0)
+            clf = KMeansConstrained(n_clusters=n_clusters, size_min=self.conv_dims[j-1]//n_clusters, random_state=0)
             clf.fit_predict(matrix.T)
             labels = clf.labels_
             matrix_list = []
-            pca_dims = [(conv_dims[j] // n_clusters) + (i < conv_dims[j] % n_clusters) for i in range(n_clusters)]
+            pca_dims = [(self.conv_dims[j] // n_clusters) + (i < self.conv_dims[j] % n_clusters) for i in range(n_clusters)]
             for i in range(n_clusters):
                 matrix_copy = matrix.copy()
                 matrix_copy[:,labels!=i] = 0

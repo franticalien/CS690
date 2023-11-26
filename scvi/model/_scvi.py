@@ -103,6 +103,8 @@ class SCVI(
         self,
         adata: AnnData,
         n_dims =  None,
+        conv_dims = None,
+        pca_max_dim: int = 200,
         n_hidden: int = 128,
         n_hvg: int = 5000,
         n_clusters: int = 10,
@@ -113,6 +115,7 @@ class SCVI(
         n_levels: int = 2,
         n_latent: int = 30,
         prior_type_ = "NORMAL",
+        n_first: int = 500,
         n_layers: int = 1,
         dropout_rate: float = 0.1,
         dispersion: Literal["gene", "gene-batch", "gene-label", "gene-cell"] = "gene",
@@ -141,15 +144,18 @@ class SCVI(
             )
         #sc.pp.highly_variable_genes(adata, n_top_genes=n_hvg, flavor="cell_ranger", batch_key="batch",subset = False)
         self.highly_variable = adata.var["highly_variable"]
-        self.M = None # n_pcs*n_clusters X n_genes
-        self.means = None
+        self.pca_M = None # n_pcs*n_clusters X n_genes
+        self.pca_means = None
         self.n_levels = n_levels
-        self.hkmkb(adata,n_clusters,n_pcs)
+        self.conv_dims = conv_dims
+        self.hkmkb_pro(adata,n_clusters,n_first,n_levels)
         self.module = self._module_cls(
             n_dims = n_dims,
+            conv_dims = conv_dims,
             n_input=self.summary_stats.n_vars,
-            M = self.M,
-            means = self.means,
+            pca_M = self.pca_M,
+            pca_means = self.pca_means,
+            pca_max_dim = pca_max_dim,
             highly_variable = self.highly_variable,
             n_batch=n_batch,
             n_labels=self.summary_stats.n_labels,
@@ -364,66 +370,47 @@ class SCVI(
         self,
         adata: AnnData,
         n_clusters: int,
-        n_pcs: int,
-        n_first: int,
+        n_first,
         n_levels: int,
     ):
 
         n_last = np.sum(self.highly_variable)
-        conv_dims = [(n_last*(n_levels - i - 1) + n_first*i)//(n_levels - 1) for i in range(n_levels)]
+        if n_levels > 1 and self.conv_dims is None:
+            conv_dims = [(n_last*(n_levels - i - 1) + n_first*i)//(n_levels - 1) for i in range(n_levels)]
         matrix = np.asarray(adata.X)[:,self.highly_variable]
 
-        M_pca = [None,]
+        pca_M, pca_means = [None,], [None,]
 
         for j in range(1,n_levels):
+            print(f"Clustering + PCA {j}")
             clf = KMeansConstrained(n_clusters=n_clusters, size_min=conv_dims[j-1]//n_clusters, random_state=0)
             clf.fit_predict(matrix.T)
             labels = clf.labels_
-
+            matrix_list = []
+            pca_dims = [(conv_dims[j] // n_clusters) + (i < conv_dims[j] % n_clusters) for i in range(n_clusters)]
             for i in range(n_clusters):
                 matrix_copy = matrix.copy()
                 matrix_copy[:,labels!=i] = 0
-                print(matrix_copy)
-                pca = PCA(n_components=n_pcs)
+                # print(matrix_copy)
+                pca = PCA(n_components=pca_dims[i])
                 pca.fit(matrix_copy)
                 pca_matrix = pca.components_
                 pca_matrix[:,labels!=i] = 0
                 matrix_list.append(pca_matrix)
 
+            mean = torch.from_numpy(np.mean(matrix,axis=0))
+            M = torch.tensor(np.concatenate(matrix_list,axis=0))
+            pca_means.append(mean)
+            pca_M.append(M)
+            matrix = torch.matmul(matrix - mean,M.T)
+            print("Done")
+        self.pca_M = pca_M
+        self.pca_means = pca_means
 
-        [(n // k) + (i < n % k) for i in range(k)]
 
-        matrix_list = []
-        num_genes = np.sum(self.highly_variable)
-        matrix = np.asarray(adata.X)[:,self.highly_variable]
-        print("Starting Clustering")
-        clf = KMeansConstrained(n_clusters=n_clusters,
-            size_min=num_genes/n_clusters,
-            random_state=0)
-        clf.fit_predict(matrix.T)
-        print("Clustering Done")
-        labels = clf.labels_
-        #print(matrix)
-        for i in range(n_clusters):
-            matrix_copy = matrix.copy()
-            matrix_copy[:,labels!=i] = 0
-            print(matrix_copy)
-            pca = PCA(n_components=n_pcs)
-            pca.fit(matrix_copy)
-            pca_matrix = pca.components_
-            pca_matrix[:,labels!=i] = 0
-            matrix_list.append(pca_matrix)
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        #print(matrix_list)
-        self.means = torch.from_numpy(np.mean(matrix,axis=0)).to(device)
-        self.M = torch.tensor(np.concatenate(matrix_list,axis=0)).to(device)
-        #print(self.M)
-        '''matrix = np.asarray(adata.X.todense())
-        pca = PCA(n_components=n_pcs)
-        pca.fit(matrix.copy())
-        #tmp = pca.fit_transform(matrix.copy())
-        self.M = pca
-        print(self.M.transform(matrix.copy()))'''
+        # [(n // k) + (i < n % k) for i in range(k)]
+
+
 
 
 

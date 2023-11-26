@@ -198,6 +198,8 @@ class SCVI(
             pca_max_dim,
             prior_type_,
             type_,
+            n_prior_clusters,
+            n_clusters,
             self.conv_dims,
             self.module.n_dims,
         )

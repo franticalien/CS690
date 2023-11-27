@@ -106,8 +106,8 @@ class SCVI(
         conv_dims = None,
         pca_max_dim: int = 200,
         n_hidden: int = 128,
-        n_hvg: int = 5000,
-        n_clusters: int = 10,
+        n_hvg: int = 2000,
+        n_clusters: int = 3,
         n_prior_clusters: int = 2,
         n_pcs: int = 50,
         n_z1: int = 10,
@@ -148,7 +148,7 @@ class SCVI(
         self.pca_means = None
         self.n_levels = n_levels
         self.conv_dims = conv_dims
-        if type_ == "NVAE" or type_ == "NVAE_PCA":
+        if type_ == "NVAE_PCA":
             self.hkmkb_pro(adata,n_clusters,n_first,n_levels)
         self.module = self._module_cls(
             n_dims = n_dims,

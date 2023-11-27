@@ -555,7 +555,7 @@ class Encoder1(nn.Module):
             elif self.type_ == "NVAE_PCA":
                 if self.x_conv[i] is not None:
                     pca_x = self.x_conv[i](pca_x)
-                    qz_input = pca
+                    qz_input = pca_x
                 else:
                     pca_x = torch.matmul(pca_x - self.pca_means[i],self.pca_M[i].T)
                     qz_input = pca_x
